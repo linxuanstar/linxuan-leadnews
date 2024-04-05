@@ -15,5 +15,6 @@ spring:
         file-extension: yml
 # wemedia端调用OCR识别，所以在wemedia端的bootstrap.yml配置
 tess4j:
+  # TODO:这里采用的是绝对路径，尝试相对路径失败，如果项目路径更换那么这里也需要更换
   data-path: D:\Java\IdeaProjects\lead_news\linxuan-leadnews\leadnews-common\src\main\resources\tessdata
   language: chi_sim
