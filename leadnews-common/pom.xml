@@ -21,6 +21,12 @@
             <groupId>com.linxuan</groupId>
             <artifactId>leadnews-model</artifactId>
         </dependency>
+        <!-- 导入OCR识别依赖 -->
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>4.1.1</version>
+        </dependency>
         <dependency>
             <groupId>org.reflections</groupId>
             <artifactId>reflections</artifactId>

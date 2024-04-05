@@ -1890,21 +1890,9 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
 
 
-## 8)新需求-图片识别文字审核敏感词
+## 新需求-图片识别文字审核敏感词
 
-#### 8.1)需求分析
-
-产品经理召集开会，文章审核功能已经交付了，文章也能正常发布审核。对于上次提出的自管理敏感词也很满意，这次会议核心的内容如下：
-
-- 文章中包含的图片要识别文字，过滤掉图片文字的敏感词
-
-![image-20210524161243572](自媒体文章-自动审核.assets\image-20210524161243572.png)
-
-
-
-#### 8.2)图片文字识别
-
-什么是OCR?
+新增加需求：文章中包含的图片要识别文字，过滤掉图片文字的敏感词。
 
 OCR （Optical Character Recognition，光学字符识别）是指电子设备（例如扫描仪或数码相机）检查纸上打印的字符，通过检测暗、亮的模式确定其形状，然后用字符识别方法将形状翻译成计算机文字的过程
 
@@ -1914,17 +1902,66 @@ OCR （Optical Character Recognition，光学字符识别）是指电子设备�
 | Tesseract-OCR | Google维护的开源OCR引擎，支持Java，Python等语言调用 |
 | Tess4J        | 封装了Tesseract-OCR  ，支持Java调用                 |
 
-#### 8.3)Tess4j案例
-
-①：创建项目导入tess4j对应的依赖
+### Tess4j案例
 
 ```xml
-<dependency>
-    <groupId>net.sourceforge.tess4j</groupId>
-    <artifactId>tess4j</artifactId>
-    <version>4.1.1</version>
-</dependency>
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.linxuan</groupId>
+        <artifactId>leadnews-test</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <!-- 新建测试项目 -->
+    <artifactId>tess4j-demo</artifactId>
+
+    <dependencies>
+        <!-- 导入OCR识别依赖 -->
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>4.1.1</version>
+        </dependency>
+    </dependencies>
+</project>
 ```
+
+```java
+package com.linxuan.tess4j;
+
+import net.sourceforge.tess4j.ITesseract;
+import net.sourceforge.tess4j.Tesseract;
+
+import java.io.File;
+
+public class Application {
+    public static void main(String[] args) {
+/*        try {
+            // 获取本地图片
+            File file = new File("D:\\test1.jpg");
+            // 创建Tesseract对象
+            ITesseract tesseract = new Tesseract();
+            // 设置字体库路径，这里不需要具体指明文件名称
+            tesseract.setDatapath("D:\\Java\\IdeaProjects\\lead_news");
+            // 中文识别，指明chi_sim.traineddata文件
+            tesseract.setLanguage("chi_sim");
+            // 执行ocr识别
+            String result = tesseract.doOCR(file);
+            // 替换回车和tal键  使结果为一行
+            result = result.replaceAll("\\r|\\n", "-").replaceAll(" ", "");
+            System.out.println("识别的结果为：" + result);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }*/
+    }
+}
+```
+
+
 
 ②：导入中文字体库， 把资料中的tessdata文件夹拷贝到自己的工作空间下
 
@@ -1966,7 +2003,7 @@ public class Application {
 }
 ```
 
-#### 8.4)管理敏感词和图片文字识别集成到文章审核
+### OCR集成文章审核
 
 ①：在heima-leadnews-common中创建工具类，简单封装一下tess4j
 
