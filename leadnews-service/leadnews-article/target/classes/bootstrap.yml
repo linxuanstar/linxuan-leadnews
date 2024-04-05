@@ -1,0 +1,15 @@
+server:
+  port: 51802
+spring:
+  application:
+    name: leadnews-article
+  #忽略Redis配置类，之后再使用
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.88.129:8848
+      config:
+        server-addr: 192.168.88.129:8848
+        file-extension: yml

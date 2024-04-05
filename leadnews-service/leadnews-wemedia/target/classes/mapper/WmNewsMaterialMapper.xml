@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- resources/mapper/WmNewsMaterialMapper.xml配置 -->
+<!-- 正常而言是要放在同名目录下的也就是resources/com/linxuan/wemedia/mapper/WmNewsMaterialMapper.xml，但是已经在Nacos中配置了查找映射文件路径 -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linxuan.wemedia.mapper.WmNewsMaterialMapper">
+
+    <!--     void saveRelations(@Param("materialIds") List<Integer> materialIds,
+                       @Param("newsId") Integer newsId,
+                       @Param("type") Short type); -->
+    <insert id="saveRelations">
+        insert into wm_news_material (material_id, news_id, type, ord)
+        values
+        <foreach collection="materialIds" index="ord" item="mid" separator=",">
+            (#{mid}, #{newsId}, #{type}, #{ord})
+        </foreach>
+    </insert>
+</mapper>
