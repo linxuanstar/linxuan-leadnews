@@ -3,7 +3,9 @@ package com.linxuan.wemedia.service.impl;
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.linxuan.common.constans.WemediaConstants;
+import com.linxuan.common.tess4j.Tess4jClient;
 import com.linxuan.feign.api.article.IArticleClient;
+import com.linxuan.file.service.FileStorageService;
 import com.linxuan.model.article.dtos.ArticleDto;
 import com.linxuan.model.common.dtos.ResponseResult;
 import com.linxuan.model.wemedia.pojos.WmChannel;
@@ -24,6 +26,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -49,6 +55,12 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
     @Autowired
     private WmSensitiveMapper wmSensitiveMapper;
 
+    @Autowired
+    private FileStorageService fileStorageService;
+
+    @Autowired
+    private Tess4jClient tess4jClient;
+
     /**
      * 自媒体文章自动审核
      * Async标明该方法异步调用
@@ -64,7 +76,7 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
         }
 
         // 使用异步操作本质就是新增加一个线程，多线程运行
-        // 有可能这个线程先运行导致自媒体端文章并没有存储，更不要说查询了，因此下面根据文章ID查询自媒体端文章可能出错
+        // 有可能这个线程先运行导致自媒体端文章并没有存储，因此下面根据文章ID查询自媒体端文章可能出错
         // 让该线程睡眠500毫秒=0.5秒，保证前面同步方法全部执行完毕
         try {
             TimeUnit.MILLISECONDS.sleep(500);
@@ -84,15 +96,15 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
             // 首先通过自己维护的敏感词管理系统来审核文本
             boolean isTextSensitiveScan = handleTextSensitiveScan((String) textAndImages.get("content"), wmNews);
-            if (!isTextSensitiveScan) return;
+            if (isTextSensitiveScan) return;
 
             // 审核文本
             boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
-            if (!isTextScan) return;
+            if (isTextScan) return;
 
             // 审核图片
-            boolean isImageScan = handleImageScan((List<String>) textAndImages.get("image"), wmNews);
-            if (!isImageScan) return;
+            boolean isImageScan = handleImageScan((List<String>) textAndImages.get("images"), wmNews);
+            if (isImageScan) return;
 
             // 审核成功，保存app端的相关的文章数据
             ResponseResult responseResult = saveAppArticle(wmNews);
@@ -153,12 +165,12 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
      *
      * @param content 需要审核的文本
      * @param wmNews  标题也需要审核，审核完成之后需要修改状态、拒绝理由并存储
-     * @return
+     * @return false代表文本没有包含敏感词汇 true代表文本包含敏感词汇
      */
     private boolean handleTextSensitiveScan(String content, WmNews wmNews) {
 
         // 设置标记
-        boolean flag = true;
+        boolean flag = false;
 
         // 获取DB中存储的敏感词列表，只取敏感词字段数据
         List<WmSensitive> wmSensitives = wmSensitiveMapper.selectList(new LambdaQueryWrapper<WmSensitive>().select(WmSensitive::getSensitives));
@@ -170,8 +182,19 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
         // 审核
         Map<String, Integer> result = SensitiveWordUtil.matchWords(wmNews.getTitle() + content);
         if (!result.isEmpty()) {
-            updateWmNews(wmNews, (short) 2, "存在违规信息: " + result);
-            flag = false;
+            String reason = "存在违规信息: " + result;
+            // 可能存在这么一种情况，违规信息过多，数据库要求50个字符以内，所以需要对违规信息删减
+            if (result.toString().length() >= 40) {
+                result = result.entrySet().stream()
+                        .limit(5)
+                        .collect(Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (existing, replacement) -> existing, HashMap::new));
+                reason = "存在违规信息(部分): " + result;
+            }
+            updateWmNews(wmNews, (short) 2, reason);
+            flag = true;
         }
         return flag;
     }
@@ -184,7 +207,7 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
      * @return 直接返回true即可
      */
     public boolean handleTextScan(String content, WmNews wmNews) {
-        return true;
+        return false;
     }
 
     /**
@@ -192,10 +215,40 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
      *
      * @param images 需要审核的图片列表
      * @param wmNews 审核完成之后需要修改状态、拒绝理由并存储
-     * @return 直接返回true即可
+     * @return false代表图片没有敏感词汇 true代表图片包含敏感词汇
      */
     public boolean handleImageScan(List<String> images, WmNews wmNews) {
-        return true;
+
+        boolean flag = false;
+
+        // 校验参数
+        if (images == null || images.isEmpty()) {
+            return flag;
+        }
+        // 图片去重
+        images = images.stream().distinct().collect(Collectors.toList());
+
+        try {
+            // 图片审核
+            for (String image : images) {
+                // 获取图片
+                byte[] bytes = fileStorageService.downLoadFile(image);
+                // 从byte[]转换为bufferedImage
+                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+                BufferedImage imageFile = ImageIO.read(byteArrayInputStream);
+                // 识别图片中文字
+                String result = tess4jClient.doOCR(imageFile);
+
+                // 判断是否包含自管理的敏感词
+                if (handleTextSensitiveScan(result, wmNews)) {
+                    flag = true;
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        return flag;
     }
 
 

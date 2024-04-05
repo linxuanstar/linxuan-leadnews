@@ -1,4 +1,4 @@
-# 自媒体文章审核功能开发
+自媒体文章审核功能开发
 
 主要审核文章内容，也就是文本内容和图片。
 
@@ -914,11 +914,11 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
             // 审核文本
             boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
-            if (!isTextScan) return;
+            if (isTextScan) return;
 
             // 审核图片
             boolean isImageScan = handleImageScan((List<String>) textAndImages.get("image"), wmNews);
-            if (!isImageScan) return;
+            if (isImageScan) return;
 
             // 审核成功，保存app端的相关的文章数据
             ResponseResult responseResult = saveAppArticle(wmNews);
@@ -980,10 +980,10 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
      *
      * @param content 需要审核的文本
      * @param wmNews  标题也需要审核，审核完成之后需要修改状态、拒绝理由并存储
-     * @return 直接返回true即可
+     * @return false代表文本没有包含敏感词汇 true代表文本包含敏感词汇
      */
     public boolean handleTextScan(String content, WmNews wmNews) {
-        return true;
+        return false;
     }
 
     /**
@@ -991,10 +991,10 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
      *
      * @param images 需要审核的图片列表
      * @param wmNews 审核完成之后需要修改状态、拒绝理由并存储
-     * @return 直接返回true即可
+     * @return false没有问题 true代表有问题
      */
     public boolean handleImageScan(List<String> images, WmNews wmNews) {
-        return true;
+        return false;
     }
 
     /**
@@ -1303,11 +1303,11 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
             // 审核文本
             boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
-            if (!isTextScan) return;
+            if (isTextScan) return;
 
             // 审核图片
             boolean isImageScan = handleImageScan((List<String>) textAndImages.get("image"), wmNews);
-            if (!isImageScan) return;
+            if (isImageScan) return;
 
             // 审核成功，保存app端的相关的文章数据
             ResponseResult responseResult = saveAppArticle(wmNews);
@@ -1499,11 +1499,11 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
             // 审核文本
             boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
-            if (!isTextScan) return;
+            if (isTextScan) return;
 
             // 审核图片
             boolean isImageScan = handleImageScan((List<String>) textAndImages.get("image"), wmNews);
-            if (!isImageScan) return;
+            if (isImageScan) return;
 
             // 审核成功，保存app端的相关的文章数据
             ResponseResult responseResult = saveAppArticle(wmNews);
@@ -1809,64 +1809,65 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
         // 使用异步操作本质就是新增加一个线程，多线程运行
         // 可能该线程先运行导致自媒体端文章没有存储，因此下面根据文章ID查询自媒体端文章可能出错
         // 让该线程睡眠500毫秒=0.5秒，保证前面同步方法全部执行完毕
-        try 
+        try {
             TimeUnit.MILLISECONDS.sleep(500);
-    } catch (InterruptedException e) {
-        throw new RuntimeException(e);
-    }
-
-    // 根据文章ID查询自媒体文章
-    WmNews wmNews = wmNewsMapper.selectById(id);
-    if (wmNews == null) {
-        throw new RuntimeException("WmNewsAutoScanServiceImpl-文章不存在");
-    }
-
-    // 从自媒体文章中提取纯文本内容、内容图片以及封面图片
-    if (wmNews.getStatus().equals(WmNews.Status.SUBMIT.getCode())) {
-        Map<String, Object> textAndImages = handleTextAndImages(wmNews);
-
-        // ================添加该代码并创建handleTextSensitiveScan方法==========================
-        // 首先通过自己维护的敏感词管理系统来审核文本
-        boolean isTextSensitiveScan = handleTextSensitiveScan((String) textAndImages.get("content"), wmNews);
-        if (!isTextSensitiveScan) return;
-
-        // 审核文本
-        boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
-        if (!isTextScan) return;
-
-        // 审核图片
-        boolean isImageScan = handleImageScan((List<String>) textAndImages.get("image"), wmNews);
-        if (!isImageScan) return;
-
-        // 审核成功，保存app端的相关的文章数据
-        ResponseResult responseResult = saveAppArticle(wmNews);
-
-        if (!responseResult.getCode().equals(200)) {
-            // TODO:假设这里抛出异常 可是并不会回滚
-            throw new RuntimeException("WmNewsAutoScanServiceImpl-文章审核，保存app端文章失败");
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
 
-        // 回填文章id
-        wmNews.setArticleId((Long) responseResult.getData());
-        updateWmNews(wmNews, (short) 9, "审核成功");
+        // 根据文章ID查询自媒体文章
+        WmNews wmNews = wmNewsMapper.selectById(id);
+        if (wmNews == null) {
+            throw new RuntimeException("WmNewsAutoScanServiceImpl-文章不存在");
+        }
+
+        // 从自媒体文章中提取纯文本内容、内容图片以及封面图片
+        if (wmNews.getStatus().equals(WmNews.Status.SUBMIT.getCode())) {
+            Map<String, Object> textAndImages = handleTextAndImages(wmNews);
+
+            // ================添加该代码并创建handleTextSensitiveScan方法==========================
+            // 首先通过自己维护的敏感词管理系统来审核文本
+            boolean isTextSensitiveScan = handleTextSensitiveScan((String) textAndImages.get("content"), wmNews);
+            if (isTextSensitiveScan) return;
+
+            // 审核文本
+            boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
+            if (isTextScan) return;
+
+            // 审核图片
+            boolean isImageScan = handleImageScan((List<String>) textAndImages.get("image"), wmNews);
+            if (isImageScan) return;
+
+            // 审核成功，保存app端的相关的文章数据
+            ResponseResult responseResult = saveAppArticle(wmNews);
+
+            if (!responseResult.getCode().equals(200)) {
+                // TODO:假设这里抛出异常 可是并不会回滚
+                throw new RuntimeException("WmNewsAutoScanServiceImpl-文章审核，保存app端文章失败");
+            }
+
+            // 回填文章id
+            wmNews.setArticleId((Long) responseResult.getData());
+            updateWmNews(wmNews, (short) 9, "审核成功");
+        }
     }
-    
-    
+
     /**
      * 通过自己管理的敏感词系统审核文本
      *
      * @param content 需要审核的文本
      * @param wmNews  标题也需要审核，审核完成之后需要修改状态、拒绝理由并存储
-     * @return
+     * @return false代表文本没有包含敏感词汇 true代表文本包含敏感词汇
      */
     private boolean handleTextSensitiveScan(String content, WmNews wmNews) {
 
         // 设置标记
-        boolean flag = true;
+        boolean flag = false;
 
         // 获取DB中存储的敏感词列表，只取敏感词字段数据
         List<WmSensitive> wmSensitives = wmSensitiveMapper
-            .selectList(new LambdaQueryWrapper<WmSensitive>().select(WmSensitive::getSensitives));
+            .selectList(new LambdaQueryWrapper<WmSensitive>()
+                        .select(WmSensitive::getSensitives));
         // 将泛型转为String类型
         List<String> sensitiveList = wmSensitives.stream()
             .map(WmSensitive::getSensitives).collect(Collectors.toList());
@@ -1876,8 +1877,19 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
         // 审核
         Map<String, Integer> result = SensitiveWordUtil.matchWords(wmNews.getTitle() + content);
         if (!result.isEmpty()) {
-            updateWmNews(wmNews, (short) 2, "存在违规信息: " + result);
-            flag = false;
+            String reason = "存在违规信息: " + result;
+            // 可能存在这么一种情况，违规信息过多，数据库要求50个字符以内，所以需要对违规信息删减
+            if (result.toString().length() >= 40) {
+                result = result.entrySet().stream()
+                    .limit(5)
+                    .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (existing, replacement) -> existing, HashMap::new));
+                reason = "存在违规信息(部分): " + result;
+            }
+            updateWmNews(wmNews, (short) 2, reason);
+            flag = true;
         }
         return flag;
     }
@@ -1887,8 +1899,6 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 启动 nacos 服务端、article微服务、wemedia 微服务、wemedia 网关微服务、前端系统 wemedia 用以测试子管理敏感词审核功能是否开发完毕。
 
 发布一篇文章，携带敏感词词汇，例如「冰毒、私家侦探」，最后会发现审核不通过。
-
-
 
 ## 新需求-图片识别文字审核敏感词
 
@@ -1933,14 +1943,9 @@ OCR （Optical Character Recognition，光学字符识别）是指电子设备�
 ```java
 package com.linxuan.tess4j;
 
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Tesseract;
-
-import java.io.File;
-
 public class Application {
     public static void main(String[] args) {
-/*        try {
+        try {
             // 获取本地图片
             File file = new File("D:\\test1.jpg");
             // 创建Tesseract对象
@@ -1956,48 +1961,6 @@ public class Application {
             System.out.println("识别的结果为：" + result);
         } catch (Exception e) {
             e.printStackTrace();
-        }*/
-    }
-}
-```
-
-
-
-②：导入中文字体库， 把资料中的tessdata文件夹拷贝到自己的工作空间下
-
-![image-20210524161406081](自媒体文章-自动审核.assets\image-20210524161406081.png)
-
-
-
-③：编写测试类进行测试
-
-```java
-package com.heima.tess4j;
-
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Tesseract;
-
-import java.io.File;
-
-public class Application {
-
-    public static void main(String[] args) {
-        try {
-            //获取本地图片
-            File file = new File("D:\\26.png");
-            //创建Tesseract对象
-            ITesseract tesseract = new Tesseract();
-            //设置字体库路径
-            tesseract.setDatapath("D:\\workspace\\tessdata");
-            //中文识别
-            tesseract.setLanguage("chi_sim");
-            //执行ocr识别
-            String result = tesseract.doOCR(file);
-            //替换回车和tal键  使结果为一行
-            result = result.replaceAll("\\r|\\n","-").replaceAll(" ","");
-            System.out.println("识别的结果为："+result);
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 }
@@ -2005,33 +1968,26 @@ public class Application {
 
 ### OCR集成文章审核
 
-①：在heima-leadnews-common中创建工具类，简单封装一下tess4j
-
-需要先导入pom
+在 leadnews-common 中创建工具类，简单封装一下 tess4j
 
 ```xml
-<dependency>
-    <groupId>net.sourceforge.tess4j</groupId>
-    <artifactId>tess4j</artifactId>
-    <version>4.1.1</version>
-</dependency>
+<name>leadnews-common</name>
+<dependencies>
+    <!-- 导入OCR识别依赖 -->
+    <dependency>
+        <groupId>net.sourceforge.tess4j</groupId>
+        <artifactId>tess4j</artifactId>
+        <version>4.1.1</version>
+    </dependency>
+</dependencies>
 ```
 
-工具类
-
 ```java
-package com.heima.common.tess4j;
+package com.linxuan.common.tess4j;
 
-import lombok.Getter;
-import lombok.Setter;
-import net.sourceforge.tess4j.ITesseract;
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.TesseractException;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
-
-import java.awt.image.BufferedImage;
-
+/**
+ * ConfigurationProperties注解解析application.yml文件注入属性，谁调用该文件，就在哪个项目中配置
+ */
 @Getter
 @Setter
 @Component
@@ -2042,419 +1998,433 @@ public class Tess4jClient {
     private String language;
 
     public String doOCR(BufferedImage image) throws TesseractException {
-        //创建Tesseract对象
+        // 创建Tesseract对象
         ITesseract tesseract = new Tesseract();
-        //设置字体库路径
+        // 设置字体库路径
         tesseract.setDatapath(dataPath);
-        //中文识别
+        // 中文识别
         tesseract.setLanguage(language);
-        //执行ocr识别
+        // 执行ocr识别
         String result = tesseract.doOCR(image);
-        //替换回车和tal键  使结果为一行
+        // 替换回车和tal键  使结果为一行
         result = result.replaceAll("\\r|\\n", "-").replaceAll(" ", "");
         return result;
     }
-
 }
 ```
 
-在spring.factories配置中添加该类,完整如下：
-
-```java
+```yml
+# leadnews-common端的spring.factories添加如下配置，项目启动注入Tess4jClient
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-  com.heima.common.exception.ExceptionCatch,\
-  com.heima.common.swagger.SwaggerConfiguration,\
-  com.heima.common.swagger.Swagger2Configuration,\
-  com.heima.common.aliyun.GreenTextScan,\
-  com.heima.common.aliyun.GreenImageScan,\
-  com.heima.common.tess4j.Tess4jClient
+  com.linxuan.common.exception.ExceptionCatch,\
+  com.linxuan.common.swagger.SwaggerConfiguration,\
+  com.linxuan.common.tess4j.Tess4jClient
 ```
 
-②：在heima-leadnews-wemedia中的配置中添加两个属性
-
-```yaml
+```yml
+# wemedia端调用OCR识别，所以在wemedia端的bootstrap.yml配置
 tess4j:
-  data-path: D:\workspace\tessdata
+  data-path: D:\Java\IdeaProjects\lead_news\linxuan-leadnews\leadnews-common\src\main\resources\tessdata
   language: chi_sim
 ```
 
-③：在WmNewsAutoScanServiceImpl中的handleImageScan方法上添加如下代码
-
 ```java
-try {
-    for (String image : images) {
-        byte[] bytes = fileStorageService.downLoadFile(image);
+package com.linxuan.wemedia.service.impl;
 
-        //图片识别文字审核---begin-----
+@Slf4j
+@Service
+@Transactional
+public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
-        //从byte[]转换为butteredImage
-        ByteArrayInputStream in = new ByteArrayInputStream(bytes);
-        BufferedImage imageFile = ImageIO.read(in);
-        //识别图片的文字
-        String result = tess4jClient.doOCR(imageFile);
+    @Autowired
+    private FileStorageService fileStorageService;
 
-        //审核是否包含自管理的敏感词
-        boolean isSensitive = handleSensitiveScan(result, wmNews);
-        if(!isSensitive){
-            return isSensitive;
+    @Autowired
+    private Tess4jClient tess4jClient;
+
+    /**
+     * 自媒体文章自动审核
+     * Async标明该方法异步调用
+     *
+     * @param id 自媒体文章ID
+     */
+    @Async
+    @Override
+    public void autoScanWmNews(Integer id) {
+        // 校验参数
+        if (id == null) {
+            return;
         }
 
-        //图片识别文字审核---end-----
+        // 使用异步操作本质就是新增加一个线程，多线程运行
+        // 有可能这个线程先运行导致自媒体端文章并没有存储，因此下面根据文章ID查询自媒体端文章可能出错
+        // 让该线程睡眠500毫秒=0.5秒，保证前面同步方法全部执行完毕
+        try {
+            TimeUnit.MILLISECONDS.sleep(500);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
 
+        // 根据文章ID查询自媒体文章
+        WmNews wmNews = wmNewsMapper.selectById(id);
+        if (wmNews == null) {
+            throw new RuntimeException("WmNewsAutoScanServiceImpl-文章不存在");
+        }
 
-        imageList.add(bytes);
+        // 从自媒体文章中提取纯文本内容、内容图片以及封面图片
+        if (wmNews.getStatus().equals(WmNews.Status.SUBMIT.getCode())) {
+            Map<String, Object> textAndImages = handleTextAndImages(wmNews);
 
-    } 
-}catch (Exception e){
-    e.printStackTrace();
+            // 首先通过自己维护的敏感词管理系统来审核文本
+            boolean isTextSensitiveScan = handleTextSensitiveScan((String) textAndImages
+                                                                  .get("content"), wmNews);
+            if (isTextSensitiveScan) return;
+
+            // 审核文本
+            boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
+            if (isTextScan) return;
+
+            // 审核图片
+            boolean isImageScan = handleImageScan((List<String>) textAndImages
+                                                  .get("images"), wmNews);
+            if (isImageScan) return;
+
+            // 审核成功，保存app端的相关的文章数据
+            ResponseResult responseResult = saveAppArticle(wmNews);
+
+            if (!responseResult.getCode().equals(200)) {
+                // TODO:假设这里抛出异常 可是并不会回滚
+                throw new RuntimeException("WmNewsAutoScanServiceImpl-文章审核，保存app端文章失败");
+            }
+
+            // 回填文章id
+            wmNews.setArticleId((Long) responseResult.getData());
+            updateWmNews(wmNews, (short) 9, "审核成功");
+        }
+    }
+
+    /**
+     * 审核图片，之前是直接返回了false，这次调用OCR识别然后文本审核
+     *
+     * @param images 需要审核的图片列表
+     * @param wmNews 审核完成之后需要修改状态、拒绝理由并存储
+     * @return false代表图片没有敏感词汇 true代表图片包含敏感词汇
+     */
+    public boolean handleImageScan(List<String> images, WmNews wmNews) {
+
+        boolean flag = false;
+
+        // 校验参数
+        if (images == null || images.isEmpty()) {
+            return flag;
+        }
+        // 图片去重
+        images = images.stream().distinct().collect(Collectors.toList());
+
+        try {
+            // 图片审核
+            for (String image : images) {
+                // 获取图片
+                byte[] bytes = fileStorageService.downLoadFile(image);
+                // 从byte[]转换为bufferedImage
+                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+                BufferedImage imageFile = ImageIO.read(byteArrayInputStream);
+                // 识别图片中文字
+                String result = tess4jClient.doOCR(imageFile);
+
+                // 判断是否包含自管理的敏感词
+                if (handleTextSensitiveScan(result, wmNews)) {
+                    flag = true;
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        return flag;
+    }
 }
 ```
 
-
-
-最后附上文章审核的完整代码如下：
+### 文章审核功能完整代码
 
 ```java
-package com.heima.wemedia.service.impl;
+package com.linxuan.wemedia.service.impl;
 
-import com.alibaba.fastjson.JSONArray;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.heima.apis.article.IArticleClient;
-import com.heima.common.aliyun.GreenImageScan;
-import com.heima.common.aliyun.GreenTextScan;
-import com.heima.common.tess4j.Tess4jClient;
-import com.heima.file.service.FileStorageService;
-import com.heima.model.article.dtos.ArticleDto;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.wemedia.pojos.WmChannel;
-import com.heima.model.wemedia.pojos.WmNews;
-import com.heima.model.wemedia.pojos.WmSensitive;
-import com.heima.model.wemedia.pojos.WmUser;
-import com.heima.utils.common.SensitiveWordUtil;
-import com.heima.wemedia.mapper.WmChannelMapper;
-import com.heima.wemedia.mapper.WmNewsMapper;
-import com.heima.wemedia.mapper.WmSensitiveMapper;
-import com.heima.wemedia.mapper.WmUserMapper;
-import com.heima.wemedia.service.WmNewsAutoScanService;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.util.*;
-import java.util.stream.Collectors;
-
-
-@Service
 @Slf4j
+@Service
 @Transactional
 public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
     @Autowired
     private WmNewsMapper wmNewsMapper;
 
-    /**
-     * 自媒体文章审核
-     *
-     * @param id 自媒体文章id
-     */
-    @Override
-    @Async  //标明当前方法是一个异步方法
-    public void autoScanWmNews(Integer id) {
-
-//        int a = 1/0;
-
-        //1.查询自媒体文章
-        WmNews wmNews = wmNewsMapper.selectById(id);
-        if (wmNews == null) {
-            throw new RuntimeException("WmNewsAutoScanServiceImpl-文章不存在");
-        }
-
-        if (wmNews.getStatus().equals(WmNews.Status.SUBMIT.getCode())) {
-            //从内容中提取纯文本内容和图片
-            Map<String, Object> textAndImages = handleTextAndImages(wmNews);
-
-            //自管理的敏感词过滤
-            boolean isSensitive = handleSensitiveScan((String) textAndImages.get("content"), wmNews);
-            if(!isSensitive) return;
-
-            //2.审核文本内容  阿里云接口
-            boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
-            if (!isTextScan) return;
-
-            //3.审核图片  阿里云接口
-            boolean isImageScan = handleImageScan((List<String>) textAndImages.get("images"), wmNews);
-            if (!isImageScan) return;
-
-            //4.审核成功，保存app端的相关的文章数据
-            ResponseResult responseResult = saveAppArticle(wmNews);
-            if (!responseResult.getCode().equals(200)) {
-                throw new RuntimeException("WmNewsAutoScanServiceImpl-文章审核，保存app端相关文章数据失败");
-            }
-            //回填article_id
-            wmNews.setArticleId((Long) responseResult.getData());
-            updateWmNews(wmNews, (short) 9, "审核成功");
-
-        }
-    }
-
     @Autowired
-    private WmSensitiveMapper wmSensitiveMapper;
-
-    /**
-     * 自管理的敏感词审核
-     * @param content
-     * @param wmNews
-     * @return
-     */
-    private boolean handleSensitiveScan(String content, WmNews wmNews) {
-
-        boolean flag = true;
-
-        //获取所有的敏感词
-        List<WmSensitive> wmSensitives = wmSensitiveMapper.selectList(Wrappers.<WmSensitive>lambdaQuery().select(WmSensitive::getSensitives));
-        List<String> sensitiveList = wmSensitives.stream().map(WmSensitive::getSensitives).collect(Collectors.toList());
-
-        //初始化敏感词库
-        SensitiveWordUtil.initMap(sensitiveList);
-
-        //查看文章中是否包含敏感词
-        Map<String, Integer> map = SensitiveWordUtil.matchWords(content);
-        if(map.size() >0){
-            updateWmNews(wmNews,(short) 2,"当前文章中存在违规内容"+map);
-            flag = false;
-        }
-
-        return flag;
-    }
-
-    @Autowired
-    private IArticleClient articleClient;
+    private WmUserMapper wmUserMapper;
 
     @Autowired
     private WmChannelMapper wmChannelMapper;
 
     @Autowired
-    private WmUserMapper wmUserMapper;
+    private IArticleClient articleClient;
 
-    /**
-     * 保存app端相关的文章数据
-     *
-     * @param wmNews
-     */
-    private ResponseResult saveAppArticle(WmNews wmNews) {
-
-        ArticleDto dto = new ArticleDto();
-        //属性的拷贝
-        BeanUtils.copyProperties(wmNews, dto);
-        //文章的布局
-        dto.setLayout(wmNews.getType());
-        //频道
-        WmChannel wmChannel = wmChannelMapper.selectById(wmNews.getChannelId());
-        if (wmChannel != null) {
-            dto.setChannelName(wmChannel.getName());
-        }
-
-        //作者
-        dto.setAuthorId(wmNews.getUserId().longValue());
-        WmUser wmUser = wmUserMapper.selectById(wmNews.getUserId());
-        if (wmUser != null) {
-            dto.setAuthorName(wmUser.getName());
-        }
-
-        //设置文章id
-        if (wmNews.getArticleId() != null) {
-            dto.setId(wmNews.getArticleId());
-        }
-        dto.setCreatedTime(new Date());
-
-        ResponseResult responseResult = articleClient.saveArticle(dto);
-        return responseResult;
-
-    }
-
+    @Autowired
+    private WmSensitiveMapper wmSensitiveMapper;
 
     @Autowired
     private FileStorageService fileStorageService;
 
     @Autowired
-    private GreenImageScan greenImageScan;
-
-    @Autowired
     private Tess4jClient tess4jClient;
+
+    /**
+     * 自媒体文章自动审核
+     * Async标明该方法异步调用
+     *
+     * @param id 自媒体文章ID
+     */
+    @Async
+    @Override
+    public void autoScanWmNews(Integer id) {
+        // 校验参数
+        if (id == null) {
+            return;
+        }
+
+        // 使用异步操作本质就是新增加一个线程，多线程运行
+        // 有可能这个线程先运行导致自媒体端文章并没有存储，因此下面根据文章ID查询自媒体端文章可能出错
+        // 让该线程睡眠500毫秒=0.5秒，保证前面同步方法全部执行完毕
+        try {
+            TimeUnit.MILLISECONDS.sleep(500);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
+        // 根据文章ID查询自媒体文章
+        WmNews wmNews = wmNewsMapper.selectById(id);
+        if (wmNews == null) {
+            throw new RuntimeException("WmNewsAutoScanServiceImpl-文章不存在");
+        }
+
+        // 从自媒体文章中提取纯文本内容、内容图片以及封面图片
+        if (wmNews.getStatus().equals(WmNews.Status.SUBMIT.getCode())) {
+            Map<String, Object> textAndImages = handleTextAndImages(wmNews);
+
+            // 首先通过自己维护的敏感词管理系统来审核文本
+            boolean isTextSensitiveScan = handleTextSensitiveScan((String) textAndImages
+                                                                  .get("content"), wmNews);
+            if (isTextSensitiveScan) return;
+
+            // 审核文本
+            boolean isTextScan = handleTextScan((String) textAndImages.get("content"), wmNews);
+            if (isTextScan) return;
+
+            // 审核图片
+            boolean isImageScan = handleImageScan((List<String>) textAndImages
+                                                  .get("images"), wmNews);
+            if (isImageScan) return;
+
+            // 审核成功，保存app端的相关的文章数据
+            ResponseResult responseResult = saveAppArticle(wmNews);
+
+            if (!responseResult.getCode().equals(200)) {
+                // TODO:假设这里抛出异常 可是并不会回滚
+                throw new RuntimeException("WmNewsAutoScanServiceImpl-文章审核，保存app端文章失败");
+            }
+
+            // 回填文章id
+            wmNews.setArticleId((Long) responseResult.getData());
+            updateWmNews(wmNews, (short) 9, "审核成功");
+        }
+    }
+
+
+    /**
+     * 从自媒体文章中提取纯文本内容、内容图片以及封面图片
+     *
+     * @param wmNews 自媒体文章
+     * @return
+     */
+    public Map<String, Object> handleTextAndImages(WmNews wmNews) {
+
+        // 存储文本内容
+        StringBuilder textStringBuilder = new StringBuilder();
+        // 存储图片，包括内容图片引用和封面图片引用
+        List<String> imageList = new ArrayList<>();
+
+        // 存储文章内容中的文本和图片引用
+        if (StringUtils.isNotBlank(wmNews.getContent())) {
+            List<Map> maps = JSON.parseArray(wmNews.getContent(), Map.class);
+            for (Map map : maps) {
+                if (map.get(WemediaConstants.WM_NEWS_TYPE)
+                    .equals(WemediaConstants.WM_NEWS_TYPE_TEXT)) {
+                    textStringBuilder.append(map.get("value"));
+                }
+                if (map.get(WemediaConstants.WM_NEWS_TYPE)
+                    .equals(WemediaConstants.WM_NEWS_TYPE_IMAGE)) {
+                    imageList.add((String) map.get("value"));
+                }
+            }
+        }
+        // 存储封面图片
+        if (StringUtils.isNotBlank(wmNews.getImages())) {
+            String[] coverImages = wmNews.getImages().split(",");
+            imageList.addAll(Arrays.asList(coverImages));
+        }
+
+        // 返回
+        Map<String, Object> map = new HashMap<>();
+        map.put("content", textStringBuilder.toString());
+        map.put("images", imageList);
+        return map;
+    }
+
+
+    /**
+     * 通过自己管理的敏感词系统审核文本
+     *
+     * @param content 需要审核的文本
+     * @param wmNews  标题也需要审核，审核完成之后需要修改状态、拒绝理由并存储
+     * @return false代表文本没有包含敏感词汇 true代表文本包含敏感词汇
+     */
+    private boolean handleTextSensitiveScan(String content, WmNews wmNews) {
+
+        // 设置标记
+        boolean flag = false;
+
+        // 获取DB中存储的敏感词列表，只取敏感词字段数据
+        List<WmSensitive> wmSensitives = wmSensitiveMapper
+            .selectList(new LambdaQueryWrapper<WmSensitive>().select(WmSensitive::getSensitives));
+        // 将泛型转为String类型
+        List<String> sensitiveList = wmSensitives.stream()
+            .map(WmSensitive::getSensitives).collect(Collectors.toList());
+
+        // 初始化敏感词字典，生成关键词字典库
+        SensitiveWordUtil.initMap(sensitiveList);
+        // 审核
+        Map<String, Integer> result = SensitiveWordUtil.matchWords(wmNews.getTitle() + content);
+        if (!result.isEmpty()) {
+            String reason = "存在违规信息: " + result;
+            // 可能存在这么一种情况，违规信息过多，数据库要求50个字符以内，所以需要对违规信息删减
+            if (result.toString().length() >= 40) {
+                result = result.entrySet().stream()
+                        .limit(5)
+                        .collect(Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (existing, replacement) -> existing, HashMap::new));
+                reason = "存在违规信息(部分): " + result;
+            }
+            updateWmNews(wmNews, (short) 2, reason);
+            flag = true;
+        }
+        return flag;
+    }
+
+    /**
+     * 审核文本
+     *
+     * @param content 需要审核的文本
+     * @param wmNews  标题也需要审核，审核完成之后需要修改状态、拒绝理由并存储
+     * @return 直接返回true即可
+     */
+    public boolean handleTextScan(String content, WmNews wmNews) {
+        return false;
+    }
 
     /**
      * 审核图片
      *
-     * @param images
-     * @param wmNews
-     * @return
+     * @param images 需要审核的图片列表
+     * @param wmNews 审核完成之后需要修改状态、拒绝理由并存储
+     * @return false代表图片没有敏感词汇 true代表图片包含敏感词汇
      */
-    private boolean handleImageScan(List<String> images, WmNews wmNews) {
+    public boolean handleImageScan(List<String> images, WmNews wmNews) {
 
-        boolean flag = true;
+        boolean flag = false;
 
-        if (images == null || images.size() == 0) {
+        // 校验参数
+        if (images == null || images.isEmpty()) {
             return flag;
         }
-
-        //下载图片 minIO
-        //图片去重
+        // 图片去重
         images = images.stream().distinct().collect(Collectors.toList());
 
-        List<byte[]> imageList = new ArrayList<>();
-
         try {
+            // 图片审核
             for (String image : images) {
+                // 获取图片
                 byte[] bytes = fileStorageService.downLoadFile(image);
-
-                //图片识别文字审核---begin-----
-
-                //从byte[]转换为butteredImage
-                ByteArrayInputStream in = new ByteArrayInputStream(bytes);
-                BufferedImage imageFile = ImageIO.read(in);
-                //识别图片的文字
+                // 从byte[]转换为bufferedImage
+                ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(bytes);
+                BufferedImage imageFile = ImageIO.read(byteArrayInputStream);
+                // 识别图片中文字
                 String result = tess4jClient.doOCR(imageFile);
 
-                //审核是否包含自管理的敏感词
-                boolean isSensitive = handleSensitiveScan(result, wmNews);
-                if(!isSensitive){
-                    return isSensitive;
-                }
-
-                //图片识别文字审核---end-----
-
-
-                imageList.add(bytes);
-
-            }
-        }catch (Exception e){
-            e.printStackTrace();
-        }
-
-
-        //审核图片
-        try {
-            Map map = greenImageScan.imageScan(imageList);
-            if (map != null) {
-                //审核失败
-                if (map.get("suggestion").equals("block")) {
-                    flag = false;
-                    updateWmNews(wmNews, (short) 2, "当前文章中存在违规内容");
-                }
-
-                //不确定信息  需要人工审核
-                if (map.get("suggestion").equals("review")) {
-                    flag = false;
-                    updateWmNews(wmNews, (short) 3, "当前文章中存在不确定内容");
+                // 判断是否包含自管理的敏感词
+                if (handleTextSensitiveScan(result, wmNews)) {
+                    flag = true;
                 }
             }
-
         } catch (Exception e) {
-            flag = false;
-            e.printStackTrace();
+            throw new RuntimeException(e);
         }
+
         return flag;
     }
 
-    @Autowired
-    private GreenTextScan greenTextScan;
 
     /**
-     * 审核纯文本内容
+     * 在APP端存储文章信息
      *
-     * @param content
-     * @param wmNews
+     * @param wmNews 需要存储的自媒体端文章信息，需要转化为app端 ap_article表信息
      * @return
      */
-    private boolean handleTextScan(String content, WmNews wmNews) {
+    public ResponseResult saveAppArticle(WmNews wmNews) {
+        // 最后存储的数据，接下来对数据进行封装
+        ArticleDto articleDto = new ArticleDto();
+        BeanUtils.copyProperties(wmNews, articleDto);
 
-        boolean flag = true;
-
-        if ((wmNews.getTitle() + "-" + content).length() == 0) {
-            return flag;
+        // 设置文章ID，这个app端ap_article.id应该与自媒体端wm_news.article_id相同
+        // 如果新增文章，自媒体端不会生成wm_news.article_id，而是等待app端插入数据后回填
+        // 如果修改文章，这个时候要依赖于ap_article.id修改，而之前已经回填过wm_news.article_id
+        if (wmNews.getArticleId() != null) {
+            articleDto.setId(wmNews.getArticleId());
         }
-        try {
-            Map map = greenTextScan.greeTextScan((wmNews.getTitle() + "-" + content));
-            if (map != null) {
-                //审核失败
-                if (map.get("suggestion").equals("block")) {
-                    flag = false;
-                    updateWmNews(wmNews, (short) 2, "当前文章中存在违规内容");
-                }
-
-                //不确定信息  需要人工审核
-                if (map.get("suggestion").equals("review")) {
-                    flag = false;
-                    updateWmNews(wmNews, (short) 3, "当前文章中存在不确定内容");
-                }
-            }
-        } catch (Exception e) {
-            flag = false;
-            e.printStackTrace();
+        // 设置文章作者ID
+        articleDto.setAuthorId((long) wmNews.getUserId());
+        // 设置文章作者名称
+        WmUser dbWmUser = wmUserMapper.selectById(wmNews.getUserId());
+        if (dbWmUser != null) {
+            articleDto.setAuthorName(dbWmUser.getName());
         }
+        // 设置文章所属频道名称
+        WmChannel dbWmChannel = wmChannelMapper.selectById(wmNews.getChannelId());
+        if (dbWmChannel != null) {
+            articleDto.setChannelName(dbWmChannel.getName());
+        }
+        // 设置文章布局
+        if (wmNews.getType() != null) {
+            articleDto.setLayout(wmNews.getType());
+        }
+        // 设置创建时间
+        articleDto.setCreatedTime(new Date());
 
-        return flag;
-
+        // 返回结果
+        return articleClient.saveArticle(articleDto);
     }
 
     /**
-     * 修改文章内容
+     * 修改自媒体端wm_news文章内容
      *
-     * @param wmNews
-     * @param status
-     * @param reason
+     * @param wmNews 需要更改的自媒体端文章对象
+     * @param status 更改文章状态
+     * @param reason 设置文章审核成功、审核失败及原因
      */
-    private void updateWmNews(WmNews wmNews, short status, String reason) {
+    public void updateWmNews(WmNews wmNews, short status, String reason) {
         wmNews.setStatus(status);
         wmNews.setReason(reason);
         wmNewsMapper.updateById(wmNews);
-    }
-
-    /**
-     * 1。从自媒体文章的内容中提取文本和图片
-     * 2.提取文章的封面图片
-     *
-     * @param wmNews
-     * @return
-     */
-    private Map<String, Object> handleTextAndImages(WmNews wmNews) {
-
-        //存储纯文本内容
-        StringBuilder stringBuilder = new StringBuilder();
-
-        List<String> images = new ArrayList<>();
-
-        //1。从自媒体文章的内容中提取文本和图片
-        if (StringUtils.isNotBlank(wmNews.getContent())) {
-            List<Map> maps = JSONArray.parseArray(wmNews.getContent(), Map.class);
-            for (Map map : maps) {
-                if (map.get("type").equals("text")) {
-                    stringBuilder.append(map.get("value"));
-                }
-
-                if (map.get("type").equals("image")) {
-                    images.add((String) map.get("value"));
-                }
-            }
-        }
-        //2.提取文章的封面图片
-        if (StringUtils.isNotBlank(wmNews.getImages())) {
-            String[] split = wmNews.getImages().split(",");
-            images.addAll(Arrays.asList(split));
-        }
-
-        Map<String, Object> resultMap = new HashMap<>();
-        resultMap.put("content", stringBuilder.toString());
-        resultMap.put("images", images);
-        return resultMap;
-
     }
 }
 ```

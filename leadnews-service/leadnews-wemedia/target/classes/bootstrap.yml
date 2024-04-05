@@ -13,3 +13,7 @@ spring:
       config:
         server-addr: 192.168.88.129:8848
         file-extension: yml
+# wemedia端调用OCR识别，所以在wemedia端的bootstrap.yml配置
+tess4j:
+  data-path: D:\Java\IdeaProjects\lead_news\linxuan-leadnews\leadnews-common\src\main\resources\tessdata
+  language: chi_sim
