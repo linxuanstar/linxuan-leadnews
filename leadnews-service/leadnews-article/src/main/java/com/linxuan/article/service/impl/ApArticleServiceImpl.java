@@ -6,6 +6,7 @@ import com.linxuan.article.mapper.ApArticleConfigMapper;
 import com.linxuan.article.mapper.ApArticleContentMapper;
 import com.linxuan.article.mapper.ApArticleMapper;
 import com.linxuan.article.service.ApArticleService;
+import com.linxuan.article.service.ArticleFreemarkerService;
 import com.linxuan.common.constans.ArticleConstants;
 import com.linxuan.model.article.dtos.ArticleDto;
 import com.linxuan.model.article.dtos.ArticleHomeDto;
@@ -38,6 +39,9 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
 
     @Autowired
     private ApArticleContentMapper apArticleContentMapper;
+
+    @Autowired
+    private ArticleFreemarkerService articleFreemarkerService;
 
     /**
      * 加载文章列表
@@ -123,6 +127,9 @@ public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle
             apArticleContent.setContent(dto.getContent());
             apArticleContentMapper.updateById(apArticleContent);
         }
+
+        // 异步调用 生成静态文件上传到minio中
+        articleFreemarkerService.buildArticleToMinIO(apArticle, dto.getContent());
 
         return ResponseResult.okResult(apArticle.getId());
     }

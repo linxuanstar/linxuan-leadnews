@@ -48,7 +48,7 @@ public class ArticleFreemarkerTest {
         // 获取文章内容
         ApArticleContent apArticleContent = apArticleContentMapper
                 .selectOne(new LambdaQueryWrapper<ApArticleContent>()
-                        .eq(ApArticleContent::getArticleId, "1383828014629179393"));
+                        .eq(ApArticleContent::getArticleId, "1776233880030941185"));
         // 通过freemarker生成html文件
         if (apArticleContent != null && StringUtils.isNotBlank(apArticleContent.getContent())) {
             Template template = configuration.getTemplate("article.ftl");

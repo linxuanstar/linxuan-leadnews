@@ -1,4 +1,4 @@
-自媒体文章审核功能开发
+# 自媒体文章审核功能开发
 
 主要审核文章内容，也就是文本内容和图片。
 
@@ -2429,70 +2429,34 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 }
 ```
 
-## 9)文章详情-静态文件生成
+## 文章详情-静态文件生成
 
-#### **9.1)思路分析**
+思路分析：自媒体端提交文章 -> 自媒体端进行审核 -> 审核成功 feign 调用 article 端接口存储数据 -> 异步调用，生成文章详情静态页上传到 MinIO 并将文件路径存储在 ap_article.static_url 中。
 
-文章端创建app相关文章时，生成文章详情静态页上传到MinIO中
-
-![image-20210709110852966](自媒体文章-自动审核.assets\image-20210709110852966.png)
-
-#### 9.2)实现步骤
-
-1.新建ArticleFreemarkerService创建静态文件并上传到minIO中
+### 实现步骤
 
 ```java
-package com.heima.article.service;
-
-import com.heima.model.article.pojos.ApArticle;
+package com.linxuan.article.service;
 
 public interface ArticleFreemarkerService {
 
     /**
      * 生成静态文件上传到minIO中
-     * @param apArticle
-     * @param content
+     *
+     * @param apArticle 最后将生成的静态文件路径存储至apArticle.static_url字段
+     * @param content   需要存储的内容
      */
-    public void buildArticleToMinIO(ApArticle apArticle,String content);
+    void buildArticleToMinIO(ApArticle apArticle, String content);
 }
 ```
 
-实现
-
 ```java
-package com.heima.article.service.impl;
+package com.linxuan.article.service.impl;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.heima.article.mapper.ApArticleContentMapper;
-import com.heima.article.service.ApArticleService;
-import com.heima.article.service.ArticleFreemarkerService;
-import com.heima.file.service.FileStorageService;
-import com.heima.model.article.pojos.ApArticle;
-import freemarker.template.Configuration;
-import freemarker.template.Template;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.io.StringWriter;
-import java.util.HashMap;
-import java.util.Map;
-
-@Service
 @Slf4j
+@Service
 @Transactional
 public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
-
-    @Autowired
-    private ApArticleContentMapper apArticleContentMapper;
 
     @Autowired
     private Configuration configuration;
@@ -2504,109 +2468,154 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
     private ApArticleService apArticleService;
 
     /**
-     * 生成静态文件上传到minIO中
-     * @param apArticle
-     * @param content
+     * 生成静态文件上传到minIO中，异步调用该方法
+     *
+     * @param apArticle 最后将生成的静态文件路径存储至apArticle.static_url字段
+     * @param content   需要存储的内容
      */
     @Async
     @Override
     public void buildArticleToMinIO(ApArticle apArticle, String content) {
-        //已知文章的id
-        //4.1 获取文章内容
-        if(StringUtils.isNotBlank(content)){
-            //4.2 文章内容通过freemarker生成html文件
-            Template template = null;
+        // 参数校验
+        if (StringUtils.isNotBlank(content)) {
+            // 文件输出流
             StringWriter out = new StringWriter();
+
             try {
-                template = configuration.getTemplate("article.ftl");
-                //数据模型
-                Map<String,Object> contentDataModel = new HashMap<>();
-                contentDataModel.put("content", JSONArray.parseArray(content));
-                //合成
-                template.process(contentDataModel,out);
+                // 通过freemarker生成html文件 文件默认路径就是classpath:/templates
+                // 创建模板对象
+                Template template = configuration.getTemplate("article.ftl");
+                // 创建数据模型
+                Map<String, Object> contentDataModel = new HashMap<>();
+                contentDataModel.put("content", JSON.parseArray(content));
+                // 合成文件
+                template.process(contentDataModel, out);
             } catch (Exception e) {
-                e.printStackTrace();
+                throw new RuntimeException(e);
             }
 
-            //4.3 把html文件上传到minio中
-            InputStream in = new ByteArrayInputStream(out.toString().getBytes());
-            String path = fileStorageService.uploadHtmlFile("", apArticle.getId() + ".html", in);
+            // 将html文件上传minio
+            InputStream inputStream = new ByteArrayInputStream(out.toString().getBytes());
+            String path = fileStorageService.uploadHtmlFile("", apArticle.getId() + ".html", 
+                                                            inputStream);
 
-
-            //4.4 修改ap_article表，保存static_url字段
-            apArticleService.update(Wrappers.<ApArticle>lambdaUpdate().eq(ApArticle::getId,apArticle.getId())
-                    .set(ApArticle::getStaticUrl,path));
-
-
+            // 修改ap_article表，保存static_url字段
+            apArticleService.update(new LambdaUpdateWrapper<ApArticle>()
+                    .eq(ApArticle::getId, apArticle.getId())
+                    .set(ApArticle::getStaticUrl, path));
         }
     }
-
 }
 ```
 
-2.在ApArticleService的saveArticle实现方法中添加调用生成文件的方法
-
 ```java
-/**
-     * 保存app端相关文章
+package com.linxuan.article.service.impl;
+
+@Slf4j
+@Service
+@Transactional
+public class ApArticleServiceImpl extends ServiceImpl<ApArticleMapper, ApArticle> implements ApArticleService {
+
+    @Autowired
+    private ApArticleMapper articleMapper;
+
+    @Autowired
+    private ApArticleConfigMapper apArticleConfigMapper;
+
+    @Autowired
+    private ApArticleContentMapper apArticleContentMapper;
+
+    @Autowired
+    private ArticleFreemarkerService articleFreemarkerService;
+
+    /**
+     * 保存app端相关文章信息
+     *
      * @param dto
      * @return
      */
-@Override
-public ResponseResult saveArticle(ArticleDto dto) {
+    @Override
+    public ResponseResult saveArticle(ArticleDto dto) {
 
-    //        try {
-    //            Thread.sleep(3000);
-    //        } catch (InterruptedException e) {
-    //            e.printStackTrace();
-    //        }
-    //1.检查参数
-    if(dto == null){
-        return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        // 校验参数
+        if (dto == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+
+        // 获取文章信息
+        ApArticle apArticle = new ApArticle();
+        BeanUtils.copyProperties(dto, apArticle);
+
+        // 判断是否包含文章ID，不包含为新增操作，包含则为修改操作
+        if (dto.getId() == null) {
+            // 新增文章信息
+            save(apArticle);
+
+            // 新增文章配置
+            ApArticleConfig apArticleConfig = ApArticleConfig.builder()
+                    .articleId(apArticle.getId()) // 前面保存文章信息的时候会返回ID
+                    .isDown(false)   // 没有下架
+                    .isDelete(false) // 没有删除
+                    .isComment(true) // 可以评论
+                    .isForward(true) // 可以转发
+                    .build();
+            apArticleConfigMapper.insert(apArticleConfig);
+
+            // 新增文章内容
+            ApArticleContent apArticleContent = new ApArticleContent();
+            apArticleContent.setContent(dto.getContent());
+            apArticleContent.setArticleId(apArticle.getId());
+            apArticleContentMapper.insert(apArticleContent);
+        } else {
+            // 修改文章信息
+            updateById(apArticle);
+
+            // 修改文章内容
+            ApArticleContent apArticleContent = apArticleContentMapper
+                .selectOne(new LambdaQueryWrapper<ApArticleContent>()
+                    .eq(ApArticleContent::getArticleId, apArticle.getId()));
+            apArticleContent.setContent(dto.getContent());
+            apArticleContentMapper.updateById(apArticleContent);
+        }
+
+        // 新增加该条========异步调用 生成静态文件========================
+        // 异步调用 生成静态文件上传到minio中
+        articleFreemarkerService.buildArticleToMinIO(apArticle, dto.getContent());
+
+        return ResponseResult.okResult(apArticle.getId());
     }
-
-    ApArticle apArticle = new ApArticle();
-    BeanUtils.copyProperties(dto,apArticle);
-
-    //2.判断是否存在id
-    if(dto.getId() == null){
-        //2.1 不存在id  保存  文章  文章配置  文章内容
-
-        //保存文章
-        save(apArticle);
-
-        //保存配置
-        ApArticleConfig apArticleConfig = new ApArticleConfig(apArticle.getId());
-        apArticleConfigMapper.insert(apArticleConfig);
-
-        //保存 文章内容
-        ApArticleContent apArticleContent = new ApArticleContent();
-        apArticleContent.setArticleId(apArticle.getId());
-        apArticleContent.setContent(dto.getContent());
-        apArticleContentMapper.insert(apArticleContent);
-
-    }else {
-        //2.2 存在id   修改  文章  文章内容
-
-        //修改  文章
-        updateById(apArticle);
-
-        //修改文章内容
-        ApArticleContent apArticleContent = apArticleContentMapper.selectOne(Wrappers.<ApArticleContent>lambdaQuery().eq(ApArticleContent::getArticleId, dto.getId()));
-        apArticleContent.setContent(dto.getContent());
-        apArticleContentMapper.updateById(apArticleContent);
-    }
-
-    //异步调用 生成静态文件上传到minio中
-    articleFreemarkerService.buildArticleToMinIO(apArticle,dto.getContent());
-
-
-    //3.结果返回  文章的id
-    return ResponseResult.okResult(apArticle.getId());
 }
 ```
 
-3.文章微服务开启异步调用
+```java
+package com.linxuan.article;
 
-![image-20210709111445360](自媒体文章-自动审核.assets\image-20210709111445360.png)
+// 开启异步调用
+@EnableAsync
+@SpringBootApplication
+@EnableDiscoveryClient
+// 开启注解式事务驱动
+@EnableTransactionManagement
+@MapperScan("com.linxuan.article.mapper")
+public class ArticleApplication {
 
+    public static void main(String[] args) {
+        SpringApplication.run(ArticleApplication.class, args);
+    }
+
+    @Bean
+    public MybatisPlusInterceptor mybatisPlusInterceptor() {
+        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        return interceptor;
+    }
+}
+```
+
+启动 nacos 服务端、article微服务、wemedia 微服务、wemedia 网关微服务、前端系统 wemedia 用以测试静态文件是否生成。
+
+发表文章，然后观察 leadnews_article.ap_article.staticle，发现生成静态文件。
+
+### TODO静态文件模板问题
+
+模板有问题，有空修改一下
