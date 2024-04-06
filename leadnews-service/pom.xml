@@ -12,6 +12,7 @@
         <module>leadnews-user</module>
         <module>leadnews-article</module>
         <module>leadnews-wemedia</module>
+        <module>leadnews-schedule</module>
     </modules>
     <modelVersion>4.0.0</modelVersion>
 
