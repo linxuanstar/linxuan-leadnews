@@ -49,7 +49,7 @@ public class TaskinfoLogs implements Serializable {
     private Integer version;
 
     /**
-     * 状态 0=int 1=EXECUTED 2=CANCELLED
+     * 状态 0=SCHEDULED初始化 1=EXECUTED已执行 2=CANCELLED已取消
      */
     @TableField("status")
     private Integer status;

@@ -251,7 +251,7 @@ public class ApArticleContent implements Serializable {
 | 响应结果 | ResponseResult       | ResponseResult           | ResponseResult  ****    |
 
 ```java
-package com.heima.model.article.dtos;
+package com.linxuan.model.article.dtos;
 
 @Data
 public class ArticleHomeDto {

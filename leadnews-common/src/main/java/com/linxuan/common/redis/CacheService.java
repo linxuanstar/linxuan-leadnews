@@ -709,7 +709,8 @@ public class CacheService extends CachingConfigurerSupport {
      * 删除集合中值等于value得元素
      *
      * @param key
-     * @param index index=0, 删除所有值等于value的元素; index>0, 从头部开始删除第一个值等于value的元素;
+     * @param index index=0, 删除所有值等于value的元素;
+     *              index>0, 从头部开始删除第一个值等于value的元素;
      *              index<0, 从尾部开始删除第一个值等于value的元素;
      * @param value
      * @return

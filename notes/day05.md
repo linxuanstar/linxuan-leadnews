@@ -60,6 +60,28 @@ Redis 中使用两种数据类型 list 和 zset 的原因：list 存储立即执
 
 使用 zset 添加数据的时候，需要判断任务执行时间是否小于预设时间（一般是当前时间 + 5分钟），而不是将所有延迟任务直接放到 zset 中。同样是防止数据量过大。任务模块是一个通用的模块，项目中任何需要延迟队列的地方，都可以调用这个接口，要考虑到数据量的问题，如果数据量特别大，为了防止阻塞，只需要把未来几分钟要执行的数据存入缓存即可。
 
+```sh
+# Docker安装redis
+# 拉取redis镜像
+[root@localhost ~]# docker pull redis
+Using default tag: latest
+latest: Pulling from library/redis
+Digest: sha256:db485f2e245b5b3329fdc7eff4eb00f913e09d8feb9ca720788059fdc2ed8339
+Status: Downloaded newer image for redis:latest
+docker.io/library/redis:latest
+# 查看当前镜像
+[root@localhost ~]# docker images
+REPOSITORY           TAG       IMAGE ID       CREATED       SIZE
+redis                latest    7614ae9453d1   2 years ago   113MB
+minio/minio          latest    ff82d4160c26   3 years ago   183MB
+nacos/nacos-server   1.2.0     763941e566bb   3 years ago   732MB
+# 创建容器，设置redis密码为leadnews
+[root@localhost ~]# docker run -d --name redis --restart=always -p 6379:6379 redis --requirepass "leadnews"
+a3e85f73b2d245a735c194a81aedcb76d2a0264ed1f17a0583d5c460110f592e
+```
+
+使用本地的 Redis Desktop Manager 连接虚拟机 Docker 中的Redis，输入host、port、auth（密码）连接测试
+
 ## Redis延迟任务服务实现
 
 ### 搭建leadnews-schedule模块
@@ -185,8 +207,7 @@ CREATE TABLE `taskinfo_logs` (
 ```
 
 ```java
-package com.heima.model.schedule.pojos;
-
+package com.linxuan.model.schedule.pojos;
 
 @Data
 @TableName("taskinfo")
@@ -219,7 +240,7 @@ public class Taskinfo implements Serializable {
     private Integer priority;
 
     /**
-     * 任务类型
+     * 任务类型, Schedule模块可以被不同的项目调用，可以处理不同类型的延迟任务
      */
     @TableField("task_type")
     private Integer taskType;
@@ -227,7 +248,7 @@ public class Taskinfo implements Serializable {
 ```
 
 ```java
-package com.heima.model.schedule.pojos;
+package com.linxuan.model.schedule.pojos;
 
 @Data
 @TableName("taskinfo_logs")
@@ -260,7 +281,7 @@ public class TaskinfoLogs implements Serializable {
     private Integer priority;
 
     /**
-     * 任务类型
+     * 任务类型, Schedule模块可以被不同的项目调用，可以处理不同类型的延迟任务
      */
     @TableField("task_type")
     private Integer taskType;
@@ -272,7 +293,7 @@ public class TaskinfoLogs implements Serializable {
     private Integer version;
 
     /**
-     * 状态 0=int 1=EXECUTED 2=CANCELLED
+     * 状态 0=SCHEDULED初始化 1=EXECUTED已执行 2=CANCELLED已取消
      */
     @TableField("status")
     private Integer status;
@@ -395,16 +416,55 @@ public class RedisTest {
 
 #### 添加任务
 
-①：拷贝mybatis-plus生成的文件，mapper
-
-②：创建task类，用于接收添加任务的参数
+创建 mapper 文件
 
 ```java
-package com.heima.model.schedule.dtos;
+package com.linxuan.schedule.mapper;
 
-import lombok.Data;
+public interface TaskinfoMapper extends BaseMapper<Taskinfo> {
 
-import java.io.Serializable;
+    /**
+     * 查询任务
+     *
+     * @param type     类型
+     * @param priority 优先级
+     * @param future   时间
+     * @return
+     */
+    List<Taskinfo> queryFutureTime(@Param("taskType") int type,
+                                   @Param("priority") int priority,
+                                   @Param("future") Date future);
+}
+```
+
+```java
+package com.linxuan.schedule.mapper;
+
+public interface TaskinfoLogsMapper extends BaseMapper<TaskinfoLogs> {
+}
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- resouces/mapper下创建TaskinfoMapper.xml映射文件 -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.linxuan.schedule.mapper.TaskinfoMapper">
+
+    <select id="queryFutureTime" resultType="com.linxuan.model.schedule.pojos.Taskinfo">
+        select *
+        from taskinfo
+        where task_type = #{taskType}
+          and priority = #{priority}
+          and execute_time <![CDATA[<]]> #{future,javaType=java.util.Date}
+    </select>
+
+</mapper>
+```
+
+创建 Task 类，用于接收添加任务的参数
+
+```java
+package com.linxuan.model.schedule.dtos;
 
 @Data
 public class Task implements Serializable {
@@ -413,8 +473,9 @@ public class Task implements Serializable {
      * 任务id
      */
     private Long taskId;
+    
     /**
-     * 类型
+     * 任务类型, Schedule模块可以被不同的项目调用，可以处理不同类型的延迟任务
      */
     private Integer taskType;
 
@@ -432,107 +493,55 @@ public class Task implements Serializable {
      * task参数
      */
     private byte[] parameters;
-    
 }
 ```
 
-③：创建TaskService
+leadnews-common 模块下面创建常量类 ScheduleConstants
 
 ```java
-package com.heima.schedule.service;
+package com.linxuan.common.constans;
 
-import com.heima.model.schedule.dtos.Task;
+public class ScheduleConstants {
 
-/**
- * 对外访问接口
- */
+    // task状态
+    // 初始化状态
+    public static final int SCHEDULED = 0;
+    // 已执行状态
+    public static final int EXECUTED = 1;
+    // 已取消状态
+    public static final int CANCELLED = 2;
+
+    // 未来数据key前缀，存储在zset中
+    public static String FUTURE = "future_";
+    // 当前数据key前缀，存储在list中
+    public static String TOPIC = "topic_";
+}
+```
+
+业务层开发
+
+```java
+package com.linxuan.schedule.service;
+
 public interface TaskService {
 
     /**
      * 添加任务
-     * @param task   任务对象
-     * @return       任务id
+     *
+     * @param task 任务对象
+     * @return 任务id
      */
-    public long addTask(Task task) ;
-
+    long addTask(Task task);
 }
 ```
 
-实现：
-
 ```java
-package com.heima.schedule.service.impl;
+package com.linxuan.schedule.service.impl;
 
-import com.alibaba.fastjson.JSON;
-import com.heima.common.constants.ScheduleConstants;
-import com.heima.common.redis.CacheService;
-import com.heima.model.schedule.dtos.Task;
-import com.heima.model.schedule.pojos.Taskinfo;
-import com.heima.model.schedule.pojos.TaskinfoLogs;
-import com.heima.schedule.mapper.TaskinfoLogsMapper;
-import com.heima.schedule.mapper.TaskinfoMapper;
-import com.heima.schedule.service.TaskService;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Calendar;
-import java.util.Date;
-
+@Slf4j
 @Service
 @Transactional
-@Slf4j
 public class TaskServiceImpl implements TaskService {
-    /**
-     * 添加延迟任务
-     *
-     * @param task
-     * @return
-     */
-    @Override
-    public long addTask(Task task) {
-        //1.添加任务到数据库中
-
-        boolean success = addTaskToDb(task);
-
-        if (success) {
-            //2.添加任务到redis
-            addTaskToCache(task);
-        }
-
-
-        return task.getTaskId();
-    }
-
-    @Autowired
-    private CacheService cacheService;
-
-    /**
-     * 把任务添加到redis中
-     *
-     * @param task
-     */
-    private void addTaskToCache(Task task) {
-
-        String key = task.getTaskType() + "_" + task.getPriority();
-
-        //获取5分钟之后的时间  毫秒值
-        Calendar calendar = Calendar.getInstance();
-        calendar.add(Calendar.MINUTE, 5);
-        long nextScheduleTime = calendar.getTimeInMillis();
-
-        //2.1 如果任务的执行时间小于等于当前时间，存入list
-        if (task.getExecuteTime() <= System.currentTimeMillis()) {
-            cacheService.lLeftPush(ScheduleConstants.TOPIC + key, JSON.toJSONString(task));
-        } else if (task.getExecuteTime() <= nextScheduleTime) {
-            //2.2 如果任务的执行时间大于当前时间 && 小于等于预设时间（未来5分钟） 存入zset中
-            cacheService.zAdd(ScheduleConstants.FUTURE + key, JSON.toJSONString(task), task.getExecuteTime());
-        }
-
-
-    }
 
     @Autowired
     private TaskinfoMapper taskinfoMapper;
@@ -540,27 +549,54 @@ public class TaskServiceImpl implements TaskService {
     @Autowired
     private TaskinfoLogsMapper taskinfoLogsMapper;
 
+    @Autowired
+    private CacheService cacheService;
+
     /**
-     * 添加任务到数据库中
+     * 添加任务
      *
-     * @param task
-     * @return
+     * @param task 任务对象
+     * @return 任务id
      */
-    private boolean addTaskToDb(Task task) {
+    @Override
+    public long addTask(Task task) {
+        // 校验参数
+        if (task == null)
+            return 0;
+
+        // 添加任务到DB中
+        if (addTaskToDB(task)) {
+            // 添加任务到Redis中
+            addTaskToCache(task);
+        }
+
+        // 返回任务ID
+        return task.getTaskId();
+    }
+
+
+    /**
+     * 添加任务到DB
+     *
+     * @param task 任务
+     * @return true添加成功 false添加失败
+     */
+    private boolean addTaskToDB(Task task) {
 
         boolean flag = false;
-
         try {
-            //保存任务表
+            // 创建Taskinfo存储对象
             Taskinfo taskinfo = new Taskinfo();
             BeanUtils.copyProperties(task, taskinfo);
+            // Task类中执行时间executeTime类型为long、TaskInfo类中执行时间executeTime类型为Date
             taskinfo.setExecuteTime(new Date(task.getExecuteTime()));
+            // 存储
             taskinfoMapper.insert(taskinfo);
 
-            //设置taskID
+            // Task是地址引用，设置它的taskId 最后返回
             task.setTaskId(taskinfo.getTaskId());
 
-            //保存任务日志数据
+            // 创建TaskinfoLogs存储对象
             TaskinfoLogs taskinfoLogs = new TaskinfoLogs();
             BeanUtils.copyProperties(taskinfo, taskinfoLogs);
             taskinfoLogs.setVersion(1);
@@ -571,121 +607,223 @@ public class TaskServiceImpl implements TaskService {
         } catch (Exception e) {
             e.printStackTrace();
         }
-
         return flag;
     }
+
+    /**
+     * 任务添加到Redis中
+     *
+     * @param task 需要添加的任务
+     */
+    private void addTaskToCache(Task task) {
+        // 获取Reids中存储的键
+        String key = getCacheKey(task);
+
+        // 获取当前时间 + 5分钟
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MINUTE, 5);
+        long nextScheduleTime = calendar.getTimeInMillis();
+
+        // 如果任务执行的时间小于当前时间 存储list
+        if (task.getExecuteTime() < System.currentTimeMillis()) {
+            cacheService.lLeftPush(ScheduleConstants.TOPIC + key, JSON.toJSONString(task));
+        } else if (task.getExecuteTime() <= nextScheduleTime) {
+            // 任务执行时间小于预设时间(当前时间 + 5分钟) 存储zset 键、值、分数
+            cacheService.zAdd(ScheduleConstants.FUTURE + key,
+                              JSON.toJSONString(task), task.getExecuteTime());
+        }
+    }
+
+    /**
+     * 获取到Redis中存储该Task的键
+     *
+     * @param task 根据taskType+priority确定键
+     * @return 返回键
+     */
+    private String getCacheKey(Task task) {
+        if (task == null || task.getTaskType() == null || task.getPriority() == null) {
+            throw new RuntimeException("获取该Task在Redis中存储的键出问题");
+        }
+        return task.getTaskType() + "_" + task.getPriority();
+    }
 }
 ```
 
-ScheduleConstants常量类
+创建测试类测试
 
 ```java
-package com.heima.common.constants;
+package com.linxuan.schedule.service.impl;
 
-public class ScheduleConstants {
+@RunWith(SpringRunner.class)
+@SpringBootTest(classes = ScheduleApplication.class)
+public class TaskServiceImplTest {
 
-    //task状态
-    public static final int SCHEDULED=0;   //初始化状态
+    @Autowired
+    private TaskService taskService;
 
-    public static final int EXECUTED=1;       //已执行状态
+    @Test
+    public void addTask() {
+        Task task = new Task();
+        task.setTaskType(100);
+        task.setPriority(50);
+        task.setParameters("task test".getBytes());
+        task.setExecuteTime(new Date().getTime());
 
-    public static final int CANCELLED=2;   //已取消状态
-
-    public static String FUTURE="future_";   //未来数据key前缀
-
-    public static String TOPIC="topic_";     //当前数据key前缀
+        // 调用添加任务方法并打印任务ID
+        System.out.println(taskService.addTask(task));
+    }
 }
 ```
 
-④：测试
+#### 取消任务
 
-
-
-#### 4.6)取消任务
-
-在TaskService中添加方法
+有这么一种场景：第三接口网络不同，使用延迟任务重试，达到阈值以后，取消任务。
 
 ```java
-/**
+package com.linxuan.schedule.service;
+
+public interface TaskService {
+
+    /**
+     * 添加任务
+     *
+     * @param task 任务对象
+     * @return 任务id
+     */
+    long addTask(Task task);
+
+    /**
      * 取消任务
-     * @param taskId        任务id
-     * @return              取消结果
+     * @param taskId 需要取消的任务的ID
+     * @return true取消成功、false取消失败
      */
-public boolean cancelTask(long taskId);
-
+    boolean cancelTask(long taskId);
+}
 ```
 
-实现
-
 ```java
-/**
+package com.linxuan.schedule.service.impl;
+
+@Slf4j
+@Service
+@Transactional
+public class TaskServiceImpl implements TaskService {
+
+    @Autowired
+    private TaskinfoMapper taskinfoMapper;
+
+    @Autowired
+    private TaskinfoLogsMapper taskinfoLogsMapper;
+
+    @Autowired
+    private CacheService cacheService;
+
+    /**
      * 取消任务
-     * @param taskId
-     * @return
+     *
+     * @param taskId 需要取消的任务的ID
+     * @return true取消成功、false取消失败
      */
-@Override
-public boolean cancelTask(long taskId) {
+    @Override
+    public boolean cancelTask(long taskId) {
+        // 删除任务 更新日志状态为2=CANCELLED已取消；
+        // 消费任务也是删除任务 更新日志状态 只不过将日志状态更改为1=EXECUTED已执行
+        Task task = updateDb(taskId, ScheduleConstants.CANCELLED);
 
-    boolean flag = false;
-
-    //删除任务，更新日志
-    Task task = updateDb(taskId,ScheduleConstants.EXECUTED);
-
-    //删除redis的数据
-    if(task != null){
-        removeTaskFromCache(task);
-        flag = true;
+        if (task != null) {
+            // 删除Redis中存储的任务
+            removeTaskFromCache(task);
+            return true;
+        }
+        return false;
     }
 
-
-
-    return false;
-}
-
-/**
-     * 删除redis中的任务数据
-     * @param task
+    /**
+     * 获取到Redis中存储该Task的键
+     *
+     * @param task 根据taskType+priority确定键
+     * @return 返回键
      */
-private void removeTaskFromCache(Task task) {
-
-    String key = task.getTaskType()+"_"+task.getPriority();
-
-    if(task.getExecuteTime()<=System.currentTimeMillis()){
-        cacheService.lRemove(ScheduleConstants.TOPIC+key,0,JSON.toJSONString(task));
-    }else {
-        cacheService.zRemove(ScheduleConstants.FUTURE+key, JSON.toJSONString(task));
-    }
-}
-
-/**
-     * 删除任务，更新任务日志状态
-     * @param taskId
-     * @param status
-     * @return
-     */
-private Task updateDb(long taskId, int status) {
-    Task task = null;
-    try {
-        //删除任务
-        taskinfoMapper.deleteById(taskId);
-
-        TaskinfoLogs taskinfoLogs = taskinfoLogsMapper.selectById(taskId);
-        taskinfoLogs.setStatus(status);
-        taskinfoLogsMapper.updateById(taskinfoLogs);
-
-        task = new Task();
-        BeanUtils.copyProperties(taskinfoLogs,task);
-        task.setExecuteTime(taskinfoLogs.getExecuteTime().getTime());
-    }catch (Exception e){
-        log.error("task cancel exception taskid={}",taskId);
+    private String getCacheKey(Task task) {
+        if (task == null || task.getTaskType() == null || task.getPriority() == null) {
+            throw new RuntimeException("获取该Task在Redis中存储的键出问题");
+        }
+        return task.getTaskType() + "_" + task.getPriority();
     }
 
-    return task;
+    /**
+     * 取消任务 更新日志中任务的状态
+     *
+     * @param taskId 需要取消的任务
+     * @param status 更改为该状态
+     * @return 返回Task用以找寻Redis中存储的该任务
+     */
+    private Task updateDb(long taskId, int status) {
+        Task task = null;
+        try {
+            // DB中taskinfo表删除该任务
+            int result = taskinfoMapper.deleteById(taskId);
+            if (result == 0) {
+                throw new RuntimeException("删除任务失败");
+            }
 
+            // taskinfo_logs更新任务状态
+            TaskinfoLogs taskinfoLogs = taskinfoLogsMapper.selectById(taskId);
+            taskinfoLogs.setStatus(status);
+            taskinfoLogsMapper.updateById(taskinfoLogs);
+
+            // 构建返回的Task对象
+            task = new Task();
+            BeanUtils.copyProperties(taskinfoLogs, task);
+            task.setExecuteTime(taskinfoLogs.getExecuteTime().getTime());
+        } catch (Exception e) {
+            log.error("task cancel exception taskid={}", taskId);
+        }
+
+        return task;
+    }
+
+    /**
+     * 移除Redis中存储的任务Task
+     *
+     * @param task 通过taskType+priority确定键、executeTime确定从list还是zset中删除
+     */
+    private void removeTaskFromCache(Task task) {
+        // 获取Redis中存储该Task的key
+        String key = getCacheKey(task);
+
+        if (task.getExecuteTime() <= System.currentTimeMillis()) {
+            // 0是删除所有和 JSON.toJSONString(task) 匹配的数据
+            cacheService.lRemove(ScheduleConstants.TOPIC + key, 0, JSON.toJSONString(task));
+        } else {
+            cacheService.zRemove(ScheduleConstants.FUTURE + key, JSON.toJSONString(task));
+        }
+    }
 }
 ```
 
 测试
+
+```java
+package com.linxuan.schedule.service.impl;
+
+@RunWith(SpringRunner.class)
+@SpringBootTest(classes = ScheduleApplication.class)
+public class TaskServiceImplTest {
+
+    @Autowired
+    private TaskService taskService;
+
+    @Test
+    public void cancelTaskTest() {
+        System.out.println(taskService.cancelTask(1776840007500185601L));
+    }
+}
+```
+
+
+
+
 
 #### 消费任务
 
