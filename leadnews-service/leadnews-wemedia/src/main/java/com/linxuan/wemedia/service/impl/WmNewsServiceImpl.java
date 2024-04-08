@@ -22,6 +22,7 @@ import com.linxuan.wemedia.mapper.WmNewsMapper;
 import com.linxuan.wemedia.mapper.WmNewsMaterialMapper;
 import com.linxuan.wemedia.service.WmNewsAutoScanService;
 import com.linxuan.wemedia.service.WmNewsService;
+import com.linxuan.wemedia.service.WmNewsTaskService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.BeanUtils;
@@ -50,6 +51,9 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
 
     @Autowired
     private WmNewsAutoScanService wmNewsAutoScanService;
+
+    @Autowired
+    private WmNewsTaskService wmNewsTaskService;
 
 
     /**
@@ -149,8 +153,8 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
         // 不是草稿，保存文章封面图片与图文的关系，如果当前布局是自动，需要在内容图片引用中匹配封面图片
         saveRelativeInfoForCover(dto, wmNews, imageContentUrls);
 
-        // 文章异步审核
-        wmNewsAutoScanService.autoScanWmNews(wmNews.getId());
+        // 将文章审核任务放到延迟队列中 这样不管是现在审核或者未来审核都可以
+        wmNewsTaskService.addNewsToTask(wmNews.getId(), wmNews.getPublishTime());
 
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }

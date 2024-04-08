@@ -1,6 +1,7 @@
 package com.linxuan.schedule.service.impl;
 
 import com.alibaba.fastjson.JSON;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.linxuan.common.constans.ScheduleConstants;
 import com.linxuan.common.redis.CacheService;
 import com.linxuan.model.schedule.dtos.Task;
@@ -10,20 +11,24 @@ import com.linxuan.schedule.mapper.TaskinfoLogsMapper;
 import com.linxuan.schedule.mapper.TaskinfoMapper;
 import com.linxuan.schedule.service.TaskService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.annotation.PostConstruct;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
 @Transactional
 public class TaskServiceImpl implements TaskService {
-
 
     @Autowired
     private TaskinfoMapper taskinfoMapper;
@@ -76,6 +81,91 @@ public class TaskServiceImpl implements TaskService {
         return false;
     }
 
+    /**
+     * 按照类型和优先级来拉取任务消费
+     *
+     * @param type     任务类型
+     * @param priority 任务优先级
+     * @return 返回任务Task对象
+     */
+    @Override
+    public Task pollTask(int type, int priority) {
+        Task task = null;
+        try {
+            // 获取Redis中存储数据的key
+            String key = getCacheKey(type, priority);
+            // 从list里面获取要消费的任务
+            String taskJson = cacheService.lRightPop(ScheduleConstants.TOPIC + key);
+            if (StringUtils.isNotBlank(taskJson)) {
+                task = JSON.parseObject(taskJson, Task.class);
+                // 修改DB该Task状态 taskinfo删除该Task taskinfo_logs修改状态为已消费
+                updateDb(task.getTaskId(), ScheduleConstants.EXECUTED);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            log.error("poll task exception");
+        }
+
+        return task;
+    }
+
+    /**
+     * Redis中存储的未来数据从zset定时刷新至list中, 每分钟刷新一次
+     *
+     * @Scheduled: 定时任务。引导类中添加开启任务调度注解：@EnableScheduling
+     */
+    @Scheduled(cron = "0 */1 * * * ?")
+    public void refreshTaskToList() {
+        // 加锁
+        String token = cacheService.tryLock(ScheduleConstants.FUTURE_TASK_SYNC, 1000 * 30);
+        if (StringUtils.isNotBlank(token)) {
+            // 获取zset中存储的所有未来5分钟内要执行的任务数据集合的key值
+            Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");
+            for (String futureKey : futureKeys) {
+                // 获取该组key对应的需要消费的任务数据
+                Set<String> tasks = cacheService.zRangeByScore(futureKey, 0, System.currentTimeMillis());
+                if (!tasks.isEmpty()) {
+                    // 设置当前任务数据放到list中后的key
+                    String topicKey = ScheduleConstants.TOPIC + futureKey.split(ScheduleConstants.FUTURE)[1];
+                    // 将任务数据添加到消费者队列list中 使用Redis管道技术(效率更高)
+                    cacheService.refreshWithPipeline(futureKey, topicKey, tasks);
+                    System.out.println("将" + futureKey + "下当前需要执行任务数据刷新到" + topicKey);
+                }
+            }
+        }
+
+    }
+
+    /**
+     * 定时加载DB中的数据同步至Redis缓存中，每5分钟调用一次
+     *
+     * @PostConstruct: 项目启动直接调用该方法
+     */
+    @PostConstruct
+    @Scheduled(cron = "0 */5 * * * ?")
+    public void reloadDataToCache() {
+        // 清理Redis中数据，避免任务重复造成多次执行
+        clearCache();
+
+        // 从DB获取小于未来5分钟的所有任务
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MINUTE, 5);
+        List<Taskinfo> taskinfos = taskinfoMapper.selectList(new LambdaQueryWrapper<Taskinfo>()
+                .lt(Taskinfo::getExecuteTime, calendar.getTime()));
+
+        // 同步Redis中
+        if (taskinfos != null && !taskinfos.isEmpty()) {
+            for (Taskinfo taskinfo : taskinfos) {
+                // 构造Task
+                Task task = new Task();
+                BeanUtils.copyProperties(taskinfo, task);
+                task.setExecuteTime(taskinfo.getExecuteTime().getTime());
+                // 添加到Redis中
+                addTaskToCache(task);
+            }
+        }
+    }
+
 
     /**
      * 添加任务到DB
@@ -118,8 +208,8 @@ public class TaskServiceImpl implements TaskService {
      * @param task 需要添加的任务
      */
     private void addTaskToCache(Task task) {
-        // 获取Reids中存储的键
-        String key = getCacheKey(task);
+        // 根据任务类型和任务优先级组成Reids中存储的键
+        String key = getCacheKey(task.getTaskType(), task.getPriority());
 
         // 获取当前时间 + 5分钟
         Calendar calendar = Calendar.getInstance();
@@ -137,16 +227,17 @@ public class TaskServiceImpl implements TaskService {
     }
 
     /**
-     * 获取到Redis中存储该Task的键
+     * 根据taskType和priority组成Redis中存储的key
      *
-     * @param task 根据taskType+priority确定键
-     * @return 返回键
+     * @param taskType 任务类型
+     * @param priority 任务优先级
+     * @return 返回key
      */
-    private String getCacheKey(Task task) {
-        if (task == null || task.getTaskType() == null || task.getPriority() == null) {
-            throw new RuntimeException("获取该Task在Redis中存储的键出问题");
+    private String getCacheKey(Integer taskType, Integer priority) {
+        if (taskType == null || priority == null) {
+            throw new RuntimeException("Redis中存储键异常");
         }
-        return task.getTaskType() + "_" + task.getPriority();
+        return taskType + "_" + priority;
     }
 
     /**
@@ -188,7 +279,7 @@ public class TaskServiceImpl implements TaskService {
      */
     private void removeTaskFromCache(Task task) {
         // 获取Redis中存储该Task的key
-        String key = getCacheKey(task);
+        String key = getCacheKey(task.getTaskType(), task.getPriority());
 
         if (task.getExecuteTime() <= System.currentTimeMillis()) {
             // 0是删除所有和 JSON.toJSONString(task) 匹配的数据
@@ -196,5 +287,15 @@ public class TaskServiceImpl implements TaskService {
         } else {
             cacheService.zRemove(ScheduleConstants.FUTURE + key, JSON.toJSONString(task));
         }
+    }
+
+    /**
+     * 清理Redis中的数据 删除缓存中未来数据集合和当前消费者队列的所有key
+     */
+    private void clearCache() {
+        Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");
+        Set<String> topicKeys = cacheService.scan(ScheduleConstants.TOPIC + "*");
+        cacheService.delete(futureKeys);
+        cacheService.delete(topicKeys);
     }
 }

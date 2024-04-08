@@ -20,17 +20,24 @@ public class TaskServiceImplTest {
 
     @Test
     public void addTask() {
-        Task task = new Task();
-        task.setTaskType(100);
-        task.setPriority(50);
-        task.setParameters("task test".getBytes());
-        task.setExecuteTime(new Date().getTime());
-
-        System.out.println(taskService.addTask(task));
+        for (int i = 0; i < 5; i++) {
+            Task task = new Task();
+            task.setTaskType(100 + i);
+            task.setPriority(50);
+            task.setParameters("task test".getBytes());
+            // 设置执行时间为当前时间+500 * i，保证任务放到zset中
+            task.setExecuteTime(new Date().getTime() + 500 * i);
+            taskService.addTask(task);
+        }
     }
 
     @Test
     public void cancelTaskTest() {
         System.out.println(taskService.cancelTask(1776840007500185601L));
+    }
+
+    @Test
+    public void pollTest() {
+        System.out.println(taskService.pollTask(100, 50));
     }
 }

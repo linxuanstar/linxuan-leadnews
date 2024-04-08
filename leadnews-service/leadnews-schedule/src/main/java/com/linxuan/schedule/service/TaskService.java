@@ -14,8 +14,18 @@ public interface TaskService {
 
     /**
      * 取消任务
+     *
      * @param taskId 需要取消的任务的ID
      * @return true取消成功、false取消失败
      */
     boolean cancelTask(long taskId);
+
+    /**
+     * 按照类型和优先级来拉取任务消费
+     *
+     * @param type     任务类型
+     * @param priority 任务优先级
+     * @return 返回任务Task对象
+     */
+    Task pollTask(int type, int priority);
 }

@@ -82,8 +82,6 @@ a3e85f73b2d245a735c194a81aedcb76d2a0264ed1f17a0583d5c460110f592e
 
 使用本地的 Redis Desktop Manager 连接虚拟机 Docker 中的Redis，输入host、port、auth（密码）连接测试
 
-## Redis延迟任务服务实现
-
 ### 搭建leadnews-schedule模块
 
 leadnews-schedule 是一个通用的服务，单独创建模块来管理任何类型的延迟任务。在 leadnews-service 模块下面创建 leadnews-schedule模块。
@@ -616,8 +614,8 @@ public class TaskServiceImpl implements TaskService {
      * @param task 需要添加的任务
      */
     private void addTaskToCache(Task task) {
-        // 获取Reids中存储的键
-        String key = getCacheKey(task);
+        // 根据任务类型和任务优先级组成Reids中存储的键
+        String key = getCacheKey(task.getTaskType(), task.getPriority());
 
         // 获取当前时间 + 5分钟
         Calendar calendar = Calendar.getInstance();
@@ -635,16 +633,17 @@ public class TaskServiceImpl implements TaskService {
     }
 
     /**
-     * 获取到Redis中存储该Task的键
+     * 根据taskType和priority组成Redis中存储的key
      *
-     * @param task 根据taskType+priority确定键
-     * @return 返回键
+     * @param taskType 任务类型
+     * @param priority 任务优先级
+     * @return 返回key
      */
-    private String getCacheKey(Task task) {
-        if (task == null || task.getTaskType() == null || task.getPriority() == null) {
-            throw new RuntimeException("获取该Task在Redis中存储的键出问题");
+    private String getCacheKey(int taskType, int priority) {
+        if (taskType == null || priority == null) {
+            throw new RuntimeException("Redis中存储键异常");
         }
-        return task.getTaskType() + "_" + task.getPriority();
+        return taskType + "_" + priority;
     }
 }
 ```
@@ -739,16 +738,17 @@ public class TaskServiceImpl implements TaskService {
     }
 
     /**
-     * 获取到Redis中存储该Task的键
+     * 根据taskType和priority组成Redis中存储的key
      *
-     * @param task 根据taskType+priority确定键
-     * @return 返回键
+     * @param taskType 任务类型
+     * @param priority 任务优先级
+     * @return 返回key
      */
-    private String getCacheKey(Task task) {
-        if (task == null || task.getTaskType() == null || task.getPriority() == null) {
-            throw new RuntimeException("获取该Task在Redis中存储的键出问题");
+    private String getCacheKey(int taskType, int priority) {
+        if (taskType == null || priority == null) {
+            throw new RuntimeException("Redis中存储键异常");
         }
-        return task.getTaskType() + "_" + task.getPriority();
+        return taskType + "_" + priority;
     }
 
     /**
@@ -790,7 +790,7 @@ public class TaskServiceImpl implements TaskService {
      */
     private void removeTaskFromCache(Task task) {
         // 获取Redis中存储该Task的key
-        String key = getCacheKey(task);
+        String key = getCacheKey(task.getTaskType(), task.getPriority());
 
         if (task.getExecuteTime() <= System.currentTimeMillis()) {
             // 0是删除所有和 JSON.toJSONString(task) 匹配的数据
@@ -821,627 +821,979 @@ public class TaskServiceImplTest {
 }
 ```
 
-
-
-
-
 #### 消费任务
 
-在TaskService中添加方法
-
 ```java
-/**
- * 按照类型和优先级来拉取任务
- * @param type
- * @param priority
- * @return
- */
-public Task poll(int type,int priority);
+package com.linxuan.schedule.service;
+
+public interface TaskService {
+
+    /**
+     * 按照类型和优先级来拉取任务消费
+     *
+     * @param type     任务类型
+     * @param priority 任务优先级
+     * @return 返回任务Task对象
+     */
+    Task pollTask(int type, int priority);
+}
 ```
 
-实现
+```java
+package com.linxuan.schedule.service.impl;
+
+@Slf4j
+@Service
+@Transactional
+public class TaskServiceImpl implements TaskService {
+
+    @Autowired
+    private TaskinfoMapper taskinfoMapper;
+
+    @Autowired
+    private TaskinfoLogsMapper taskinfoLogsMapper;
+
+    @Autowired
+    private CacheService cacheService;
+
+    /**
+     * 按照类型和优先级来拉取任务消费
+     *
+     * @param type     任务类型
+     * @param priority 任务优先级
+     * @return 返回任务Task对象
+     */
+    @Override
+    public Task pollTask(int type, int priority) {
+        Task task = null;
+        try {
+            // 获取Redis中存储数据的key
+            String key = getCacheKey(type, priority);
+            // 从list里面获取要消费的任务
+            String taskJson = cacheService.lRightPop(ScheduleConstants.TOPIC + key);
+            if (StringUtils.isNotBlank(taskJson)) {
+                task = JSON.parseObject(taskJson, Task.class);
+                // 修改DB该Task状态 taskinfo删除该Task taskinfo_logs修改状态为已消费
+                updateDb(task.getTaskId(), ScheduleConstants.EXECUTED);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            log.error("poll task exception");
+        }
+
+        return task;
+    }
+
+    /**
+     * 根据taskType和priority组成Redis中存储的key
+     *
+     * @param taskType 任务类型
+     * @param priority 任务优先级
+     * @return 返回key
+     */
+    private String getCacheKey(Integer taskType, Integer priority) {
+        if (taskType == null || priority == null) {
+            throw new RuntimeException("Redis中存储键异常");
+        }
+        return taskType + "_" + priority;
+    }
+}
+```
 
 ```java
+package com.linxuan.schedule.service.impl;
+
+@RunWith(SpringRunner.class)
+@SpringBootTest(classes = ScheduleApplication.class)
+public class TaskServiceImplTest {
+
+    @Autowired
+    private TaskService taskService;
+
+    // 先确保Redis中存在数据
+    @Test
+    public void addTask() {
+        Task task = new Task();
+        task.setTaskType(100);
+        task.setPriority(50);
+        task.setParameters("task test".getBytes());
+        task.setExecuteTime(new Date().getTime());
+
+        System.out.println(taskService.addTask(task));
+    }
+
+    // 测试消费任务
+    @Test
+    public void pollTest() {
+        System.out.println(taskService.pollTask(100, 50));
+    }
+}
+```
+
+#### 未来数据zset定时刷新至list
+
+```mermaid
+graph LR;
+  A["定时任务/每分钟"] --> B["获取未来数据的keys"]
+  B --按照分值查询zset--> C{"判断数据是否到期"}
+  C -- 同步 --> D["Redis中的list"] 
+```
+
+首先需要获取未来数据 zset 中存储的所有 key。有两种方法：
+
+1. keys 模糊匹配。keys 的模糊匹配功能很方便也很强大，但是在生产环境需要慎用！开发中使用 keys 的模糊匹配会发现 redis 的 CPU 使用率极高，所以 redis 生产环境将 keys 命令禁用！redis是单线程，会被堵塞
+
+   ```java
+   @Test
+   public void testKeys() {
+       // 使用keys方式模糊匹配所有的前缀为future_的所有key 生产环境不要使用
+       Set<String> keys = cacheService.keys("future_*");
+       System.out.println(keys);
+   }
+   ```
+
+2. scan 命令。SCAN 命令是一个基于游标的迭代器，SCAN 命令每次被调用之后， 都会向用户返回一个新的游标， 用户在下次迭代时需要使用这个新游标作为 SCAN 命令的游标参数， 以此来延续之前的迭代过程。
+
+   ```java
+   @Test
+   public void testKeys() {
+       // 使用scan方式模糊匹配所有的前缀为future_的所有key
+       Set<String> scan = cacheService.scan("future_*");
+       System.out.println(scan);
+   }
+   ```
+
+将未来数据从 zset 刷新至 list 中
+
+```java
+package com.linxuan.schedule.service.impl;
+
+@Slf4j
+@Service
+@Transactional
+public class TaskServiceImpl implements TaskService {
+
+    /**
+     * Redis中存储的未来数据从zset定时刷新至list中, 每分钟刷新一次
+     *
+     * @Scheduled: 定时任务。引导类中添加开启任务调度注解：@EnableScheduling
+     */
+    @Scheduled(cron = "0 */1 * * * ?")
+    public void refreshTaskToList() {
+        // 获取zset中存储的所有未来5分钟内要执行的任务数据集合的key值
+        Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");
+        for (String futureKey : futureKeys) {
+            // 获取该组key对应的需要消费的任务数据
+            Set<String> tasks = cacheService.zRangeByScore(futureKey, 0, System.currentTimeMillis());
+            if (!tasks.isEmpty()) {
+                // 设置当前任务数据放到list中后的key
+                String topicKey = ScheduleConstants.TOPIC + 
+                    futureKey.split(ScheduleConstants.FUTURE)[1];
+                // 将任务数据添加到消费者队列list中 使用Redis管道技术(效率更高)
+                cacheService.refreshWithPipeline(futureKey, topicKey, tasks);
+                System.out.println("将" + futureKey + "下当前需要执行任务数据刷新到" + topicKey);
+            }
+        }
+    }
+}
+```
+
+```java
+// 添加任务到zset中
+@Test
+public void addTask() {
+    for (int i = 0; i < 5; i++) {
+        Task task = new Task();
+        task.setTaskType(100 + i);
+        task.setPriority(50);
+        task.setParameters("task test".getBytes());
+        // 设置执行时间为当前时间+500 * i，保证任务放到zset中
+        task.setExecuteTime(new Date().getTime() + 500 * i);
+        taskService.addTask(task);
+    }
+}
+
+```
+
+```java
+package com.linxuan.schedule;
+
 /**
-     * 按照类型和优先级拉取任务
+ * @EnableScheduling: 开启调度任务
+ */
+@EnableScheduling
+@SpringBootApplication
+@MapperScan("com.linxuan.schedule.mapper")
+public class ScheduleApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ScheduleApplication.class, args);
+    }
+
+    /**
+     * mybatis-plus乐观锁支持
+     *
      * @return
      */
-@Override
-public Task poll(int type,int priority) {
-    Task task = null;
-    try {
-        String key = type+"_"+priority;
-        String task_json = cacheService.lRightPop(ScheduleConstants.TOPIC + key);
-        if(StringUtils.isNotBlank(task_json)){
-            task = JSON.parseObject(task_json, Task.class);
-            //更新数据库信息
-            updateDb(task.getTaskId(),ScheduleConstants.EXECUTED);
-        }
-    }catch (Exception e){
-        e.printStackTrace();
-        log.error("poll task exception");
-    }
-
-    return task;
-}
-```
-
-#### 未来数据定时刷新
-
-##### reids key值匹配
-
-方案1：keys 模糊匹配
-
-keys的模糊匹配功能很方便也很强大，但是在生产环境需要慎用！开发中使用keys的模糊匹配却发现redis的CPU使用率极高，所以公司的redis生产环境将keys命令禁用了！redis是单线程，会被堵塞
-
-![image-20210515162329679](延迟任务精准发布文章.assets\image-20210515162329679.png)
-
-方案2：scan 
-
-SCAN 命令是一个基于游标的迭代器，SCAN命令每次被调用之后， 都会向用户返回一个新的游标， 用户在下次迭代时需要使用这个新游标作为SCAN命令的游标参数， 以此来延续之前的迭代过程。
-
-![image-20210515162419548](延迟任务精准发布文章.assets\image-20210515162419548.png)
-
-代码案例：
-
-```java
-@Test
-public void testKeys(){
-    Set<String> keys = cacheService.keys("future_*");
-    System.out.println(keys);
-
-    Set<String> scan = cacheService.scan("future_*");
-    System.out.println(scan);
-}
-```
-
-##### reids管道
-
-普通redis客户端和服务器交互模式
-
-![image-20210515162537224](延迟任务精准发布文章.assets\image-20210515162537224.png)
-
-Pipeline请求模型
-
-![image-20210515162604410](延迟任务精准发布文章.assets\image-20210515162604410.png)
-
-官方测试结果数据对比
-
-![image-20210515162621928](延迟任务精准发布文章.assets\image-20210515162621928.png)
-
-测试案例对比：
-
-```java
-//耗时6151
-@Test
-public  void testPiple1(){
-    long start =System.currentTimeMillis();
-    for (int i = 0; i <10000 ; i++) {
-        Task task = new Task();
-        task.setTaskType(1001);
-        task.setPriority(1);
-        task.setExecuteTime(new Date().getTime());
-        cacheService.lLeftPush("1001_1", JSON.toJSONString(task));
-    }
-    System.out.println("耗时"+(System.currentTimeMillis()- start));
-}
-
-
-@Test
-public void testPiple2(){
-    long start  = System.currentTimeMillis();
-    //使用管道技术
-    List<Object> objectList = cacheService.getstringRedisTemplate().executePipelined(new RedisCallback<Object>() {
-        @Nullable
-        @Override
-        public Object doInRedis(RedisConnection redisConnection) throws DataAccessException {
-            for (int i = 0; i <10000 ; i++) {
-                Task task = new Task();
-                task.setTaskType(1001);
-                task.setPriority(1);
-                task.setExecuteTime(new Date().getTime());
-                redisConnection.lPush("1001_1".getBytes(), JSON.toJSONString(task).getBytes());
-            }
-            return null;
-        }
-    });
-    System.out.println("使用管道技术执行10000次自增操作共耗时:"+(System.currentTimeMillis()-start)+"毫秒");
-}
-```
-
-
-
-##### 未来数据定时刷新-功能完成
-
-在TaskService中添加方法
-
-```java
-@Scheduled(cron = "0 */1 * * * ?")
-public void refresh() {
-    System.out.println(System.currentTimeMillis() / 1000 + "执行了定时任务");
-
-    // 获取所有未来数据集合的key值
-    Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");// future_*
-    for (String futureKey : futureKeys) { // future_250_250
-
-        String topicKey = ScheduleConstants.TOPIC + futureKey.split(ScheduleConstants.FUTURE)[1];
-        //获取该组key下当前需要消费的任务数据
-        Set<String> tasks = cacheService.zRangeByScore(futureKey, 0, System.currentTimeMillis());
-        if (!tasks.isEmpty()) {
-            //将这些任务数据添加到消费者队列中
-            cacheService.refreshWithPipeline(futureKey, topicKey, tasks);
-            System.out.println("成功的将" + futureKey + "下的当前需要执行的任务数据刷新到" + topicKey + "下");
-        }
+    @Bean
+    public MybatisPlusInterceptor optimisticLockerInterceptor() {
+        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        interceptor.addInnerInterceptor(new OptimisticLockerInnerInterceptor());
+        return interceptor;
     }
 }
 ```
 
-在引导类中添加开启任务调度注解：`@EnableScheduling`
+添加完任务到 zset 中之后启动整个项目，每分钟会将 zset 中的任务刷新至 list 中。
 
-## 4.9)分布式锁解决集群下的方法抢占执行
+## 集群下的方法抢占执行
 
-##### 4.9.1)问题描述
-
-启动两台heima-leadnews-schedule服务，每台服务都会去执行refresh定时任务方法
-
-![image-20210516112243712](延迟任务精准发布文章.assets\image-20210516112243712.png)
-
-##### 4.9.2)分布式锁
+启动两台 leadnews-schedule 服务，每台服务都会去执行 refresh 定时任务方法，这样肯定是有问题的，我们只需要一个项目取刷新定时任务即可。这个时候就用到了分布式锁的解决方法。
 
 分布式锁：控制分布式系统有序的去对共享资源进行操作，通过互斥来保证数据的一致性。
 
-解决方案：
+| 方案      | 说明                                |
+| --------- | ----------------------------------- |
+| 数据库    | 基于表的唯一索引                    |
+| zookeeper | 根据 zookeeper 中的临时有序节点排序 |
+| redis     | 使用 SETNX 命令完成                 |
 
-![image-20210516112457413](延迟任务精准发布文章.assets\image-20210516112457413.png)
-
-
-
-##### 4.9.3)redis分布式锁
+### redis分布式锁
 
 sexnx （SET if Not eXists） 命令在指定的 key 不存在时，为 key 设置指定的值。
 
-![image-20210516112612399](延迟任务精准发布文章.assets\image-20210516112612399.png)
-
 这种加锁的思路是，如果 key 不存在则为 key 设置 value，如果 key 已存在则 SETNX 命令不做任何操作
 
-- 客户端A请求服务器设置key的值，如果设置成功就表示加锁成功
-- 客户端B也去请求服务器设置key的值，如果返回失败，那么就代表加锁失败
-- 客户端A执行代码完成，删除锁
-- 客户端B在等待一段时间后再去请求设置key的值，设置成功
-- 客户端B执行代码完成，删除锁
+- 客户端 A 请求服务器设置 key 的值，如果设置成功就表示加锁成功
+- 客户端 B 也去请求服务器设置 key 的值，如果返回失败，那么就代表加锁失败
+- 客户端 A 执行代码完成，删除锁
+- 客户端 B 在等待一段时间后再去请求设置 key 的值，设置成功
+- 客户端 B 执行代码完成，删除锁
 
-##### 4.9.4)在工具类CacheService中添加方法
+### 项目集成解决
+
+CacheService 中添加如下方法
 
 ```java
-/**
- * 加锁
- *
- * @param name
- * @param expire
- * @return
- */
-public String tryLock(String name, long expire) {
-    name = name + "_lock";
-    String token = UUID.randomUUID().toString();
-    RedisConnectionFactory factory = stringRedisTemplate.getConnectionFactory();
-    RedisConnection conn = factory.getConnection();
-    try {
+package com.linxuan.common.redis;
 
-        //参考redis命令：
-        //set key value [EX seconds] [PX milliseconds] [NX|XX]
-        Boolean result = conn.set(
+@Component
+public class CacheService extends CachingConfigurerSupport {
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+    
+    /**
+     * 加锁
+     *
+     * @param name
+     * @param expire
+     * @return
+     */
+    public String tryLock(String name, long expire) {
+        name = name + "_lock";
+        String token = UUID.randomUUID().toString();
+        RedisConnectionFactory factory = stringRedisTemplate.getConnectionFactory();
+        RedisConnection conn = factory.getConnection();
+        try {
+
+            // 参考redis命令：
+            // set key value [EX seconds] [PX milliseconds] [NX|XX]
+            Boolean result = conn.set(
                 name.getBytes(),
                 token.getBytes(),
                 Expiration.from(expire, TimeUnit.MILLISECONDS),
-                RedisStringCommands.SetOption.SET_IF_ABSENT //NX
-        );
-        if (result != null && result)
-            return token;
-    } finally {
-        RedisConnectionUtils.releaseConnection(conn, factory,false);
+                RedisStringCommands.SetOption.SET_IF_ABSENT // NX
+            );
+            if (result != null && result)
+                return token;
+        } finally {
+            RedisConnectionUtils.releaseConnection(conn, factory, false);
+        }
+        return null;
     }
-    return null;
+}
+```
+
+```java
+package com.linxuan.common.constans;
+
+public class ScheduleConstants {
+
+    // task状态
+    // 初始化状态
+    public static final int SCHEDULED = 0;
+    // 已执行状态
+    public static final int EXECUTED = 1;
+    // 已取消状态
+    public static final int CANCELLED = 2;
+
+    // 未来数据key前缀，存储在zset中
+    public static String FUTURE = "future_";
+    // 当前数据key前缀，存储在list中
+    public static String TOPIC = "topic_";
+
+    // 任务锁
+    public static String FUTURE_TASK_SYNC = "FUTURE_TASK_SYNC";
 }
 ```
 
 修改未来数据定时刷新的方法，如下：
 
 ```java
-/**
- * 未来数据定时刷新
- */
-@Scheduled(cron = "0 */1 * * * ?")
-public void refresh(){
+package com.linxuan.schedule.service.impl;
 
-    String token = cacheService.tryLock("FUTURE_TASK_SYNC", 1000 * 30);
-    if(StringUtils.isNotBlank(token)){
-        log.info("未来数据定时刷新---定时任务");
-
-        //获取所有未来数据的集合key
-        Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");
-        for (String futureKey : futureKeys) {//future_100_50
-
-            //获取当前数据的key  topic
-            String topicKey = ScheduleConstants.TOPIC+futureKey.split(ScheduleConstants.FUTURE)[1];
-
-            //按照key和分值查询符合条件的数据
-            Set<String> tasks = cacheService.zRangeByScore(futureKey, 0, System.currentTimeMillis());
-
-            //同步数据
-            if(!tasks.isEmpty()){
-                cacheService.refreshWithPipeline(futureKey,topicKey,tasks);
-                log.info("成功的将"+futureKey+"刷新到了"+topicKey);
+@Slf4j
+@Service
+@Transactional
+public class TaskServiceImpl implements TaskService {
+    
+    /**
+     * Redis中存储的未来数据从zset定时刷新至list中, 每分钟刷新一次
+     *
+     * @Scheduled: 定时任务。引导类中添加开启任务调度注解：@EnableScheduling
+     */
+    @Scheduled(cron = "0 */1 * * * ?")
+    public void refreshTaskToList() {
+        // 加锁
+        String token = cacheService.tryLock(ScheduleConstants.FUTURE_TASK_SYNC, 1000 * 30);
+        if (StringUtils.isNotBlank(token)) {
+            // 获取zset中存储的所有未来5分钟内要执行的任务数据集合的key值
+            Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");
+            for (String futureKey : futureKeys) {
+                // 获取该组key对应的需要消费的任务数据
+                Set<String> tasks = cacheService.zRangeByScore(futureKey, 0, 
+                                                               System.currentTimeMillis());
+                if (!tasks.isEmpty()) {
+                    // 设置当前任务数据放到list中后的key
+                    String topicKey = ScheduleConstants.TOPIC + 
+                        futureKey.split(ScheduleConstants.FUTURE)[1];
+                    // 将任务数据添加到消费者队列list中 使用Redis管道技术(效率更高)
+                    cacheService.refreshWithPipeline(futureKey, topicKey, tasks);
+                    System.out.println("将" + futureKey + "下当前需要执行任务数据刷新到" + topicKey);
+                }
             }
         }
     }
 }
 ```
 
-#### 4.10)数据库同步到redis
-
-![image-20210721013255332](延迟任务精准发布文章.assets\image-20210721013255332.png)
+## DB数据定时同步至redis的zset
 
 ```java
-@Scheduled(cron = "0 */5 * * * ?")
-@PostConstruct
-public void reloadData() {
-    clearCache();
-    log.info("数据库数据同步到缓存");
-    Calendar calendar = Calendar.getInstance();
-    calendar.add(Calendar.MINUTE, 5);
+package com.linxuan.schedule.service.impl;
 
-    //查看小于未来5分钟的所有任务
-    List<Taskinfo> allTasks = taskinfoMapper.selectList(Wrappers.<Taskinfo>lambdaQuery().lt(Taskinfo::getExecuteTime,calendar.getTime()));
-    if(allTasks != null && allTasks.size() > 0){
-        for (Taskinfo taskinfo : allTasks) {
-            Task task = new Task();
-            BeanUtils.copyProperties(taskinfo,task);
-            task.setExecuteTime(taskinfo.getExecuteTime().getTime());
-            addTaskToCache(task);
+@Slf4j
+@Service
+@Transactional
+public class TaskServiceImpl implements TaskService {
+
+    @Autowired
+    private TaskinfoMapper taskinfoMapper;
+
+    @Autowired
+    private TaskinfoLogsMapper taskinfoLogsMapper;
+
+    @Autowired
+    private CacheService cacheService;
+
+
+    /**
+     * 定时加载DB中的数据同步至Redis缓存中，每5分钟调用一次
+     *
+     * @PostConstruct: 项目启动直接调用该方法
+     */
+    @PostConstruct
+    @Scheduled(cron = "0 */5 * * * ?")
+    public void reloadDataToCache() {
+        // 清理Redis中数据，避免任务重复造成多次执行
+        clearCache();
+
+        // 从DB获取小于未来5分钟的所有任务
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.MINUTE, 5);
+        List<Taskinfo> taskinfos = taskinfoMapper.selectList(new LambdaQueryWrapper<Taskinfo>()
+                .lt(Taskinfo::getExecuteTime, calendar.getTime()));
+
+        // 同步Redis中
+        if (taskinfos != null && !taskinfos.isEmpty()) {
+            for (Taskinfo taskinfo : taskinfos) {
+                // 构造Task
+                Task task = new Task();
+                BeanUtils.copyProperties(taskinfo, task);
+                task.setExecuteTime(taskinfo.getExecuteTime().getTime());
+                // 添加到Redis中
+                addTaskToCache(task);
+            }
         }
     }
-}
-
-private void clearCache(){
-    // 删除缓存中未来数据集合和当前消费者队列的所有key
-    Set<String> futurekeys = cacheService.scan(ScheduleConstants.FUTURE + "*");// future_
-    Set<String> topickeys = cacheService.scan(ScheduleConstants.TOPIC + "*");// topic_
-    cacheService.delete(futurekeys);
-    cacheService.delete(topickeys);
+    
+    /**
+     * 清理Redis中的数据 删除缓存中未来数据集合和当前消费者队列的所有key
+     */
+    private void clearCache() {
+        Set<String> futureKeys = cacheService.scan(ScheduleConstants.FUTURE + "*");
+        Set<String> topicKeys = cacheService.scan(ScheduleConstants.TOPIC + "*");
+        cacheService.delete(futureKeys);
+        cacheService.delete(topicKeys);
+    }
 }
 ```
 
-## 5)延迟队列解决精准时间发布文章
+启动项目会首先调用 reloadDataToCache 方法刷新数据至 Redis 中。
 
-##### 5.1)延迟队列服务提供对外接口
+## 延迟队列解决精准时间发布文章
 
-提供远程的feign接口，在heima-leadnews-feign-api编写类如下：
+```mermaid
+graph LR;
+ A["添加任务"] --> B[("DB")]
+ B --> C{执行时间<<br>当前时间}
+ C --是--> D["当前消费队列 list"]
+ D --> 定时消费任务/每秒
+ C --否--> E{执行时间<=<br>预设时间}
+ E --是--> F{"未来数据队列 zset"} 
+ F --定时刷新/分钟--> D
+ G["定时同步"] --> B
+ G --> E
+```
+
+这里只需要解决添加任务以及定时消费任务即可，前面已经解决Redis实现延迟任务。
+
+### 提供远程feign对外接口
+
+提供远程的 feign 接口，在 leadnews-feign-api 编写类如下：
 
 ```java
-package com.heima.apis.schedule;
-
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.schedule.dtos.Task;
-import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+package com.linxuan.feign.api.schedule;
 
 @FeignClient("leadnews-schedule")
 public interface IScheduleClient {
-
     /**
      * 添加任务
-     * @param task   任务对象
-     * @return       任务id
+     *
+     * @param task 任务对象
+     * @return 任务id
      */
     @PostMapping("/api/v1/task/add")
-    public ResponseResult  addTask(@RequestBody Task task);
+    public ResponseResult addTask(@RequestBody Task task);
 
     /**
      * 取消任务
-     * @param taskId        任务id
-     * @return              取消结果
+     *
+     * @param taskId 任务id
+     * @return 取消结果
      */
     @GetMapping("/api/v1/task/cancel/{taskId}")
     public ResponseResult cancelTask(@PathVariable("taskId") long taskId);
 
     /**
      * 按照类型和优先级来拉取任务
-     * @param type
-     * @param priority
-     * @return
+     *
+     * @param type     任务类型
+     * @param priority 任务优先级
+     * @return 返回拉取到的任务
      */
     @GetMapping("/api/v1/task/poll/{type}/{priority}")
-    public ResponseResult poll(@PathVariable("type") int type,@PathVariable("priority")  int priority);
+    public ResponseResult poll(@PathVariable("type") int type, 
+                               @PathVariable("priority") int priority);
 }
 ```
 
-在heima-leadnews-schedule微服务下提供对应的实现
+在 leadnews-schedule 微服务下提供对应的实现
 
 ```java
-package com.heima.schedule.feign;
-
-import com.heima.apis.schedule.IScheduleClient;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.schedule.dtos.Task;
-import com.heima.schedule.service.TaskService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
+package com.linxuan.schedule.feign;
 
 @RestController
-public class ScheduleClient  implements IScheduleClient {
+public class ScheduleClient implements IScheduleClient {
 
     @Autowired
     private TaskService taskService;
 
     /**
      * 添加任务
+     *
      * @param task 任务对象
      * @return 任务id
      */
-    @PostMapping("/api/v1/task/add")
     @Override
-    public ResponseResult addTask(@RequestBody Task task) {
+    @PostMapping("/api/v1/task/add")
+    public ResponseResult addTask(Task task) {
         return ResponseResult.okResult(taskService.addTask(task));
     }
 
     /**
      * 取消任务
+     *
      * @param taskId 任务id
      * @return 取消结果
      */
-    @GetMapping("/api/v1/task/cancel/{taskId}")
     @Override
-    public ResponseResult cancelTask(@PathVariable("taskId") long taskId) {
+    @GetMapping("/api/v1/task/cancel/{taskId}")
+    public ResponseResult cancelTask(long taskId) {
         return ResponseResult.okResult(taskService.cancelTask(taskId));
     }
 
     /**
      * 按照类型和优先级来拉取任务
-     * @param type
-     * @param priority
+     *
+     * @param type     任务类型
+     * @param priority 任务优先级
+     * @return 返回拉取到的任务
+     */
+    @Override
+    @GetMapping("/api/v1/task/poll/{type}/{priority}")
+    public ResponseResult poll(int type, int priority) {
+        return ResponseResult.okResult(taskService.pollTask(type, priority));
+    }
+}
+```
+
+### 发布文章集成延迟队列接口
+
+```mermaid
+graph LR;
+  A["文章发布"] -- 添加任务 --> B["schedule"]
+  C["文章审核"] -- 拉取任务 --> B
+```
+
+文章发布之后调用 schedule 添加任务，将文章 WmNews 序列化为 Task.Parameters 的值存储到 DB 或 Redis 中。
+
+- JdkSerialize：java内置的序列化能将实现了Serilazable接口的对象进行序列化和反序列化， ObjectOutputStream的writeObject()方法可序列化对象生成字节数组
+- Protostuff：google 开源的 protostuff 采用更为紧凑的二进制数组，表现更加优异，然后使用 protostuff 的编译工具生成pojo类
+
+```java
+package com.linxuan.utils.common;
+
+/**
+ * jdk序列化工具类
+ */
+public class JdkSerializeUtil {
+
+    /**
+     * 序列化
+     *
+     * @param obj
+     * @param <T>
      * @return
      */
-    @GetMapping("/api/v1/task/poll/{type}/{priority}")
-    @Override
-    public ResponseResult poll(@PathVariable("type") int type, @PathVariable("priority") int priority) {
-        return ResponseResult.okResult(taskService.poll(type,priority));
+    public static <T> byte[] serialize(T obj) {
+
+        if (obj == null) {
+            throw new NullPointerException();
+        }
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try {
+            ObjectOutputStream oos = new ObjectOutputStream(bos);
+
+            oos.writeObject(obj);
+            return bos.toByteArray();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return new byte[0];
+    }
+
+    /**
+     * 反序列化
+     *
+     * @param data
+     * @param clazz
+     * @param <T>
+     * @return
+     */
+    public static <T> T deserialize(byte[] data, Class<T> clazz) {
+        ByteArrayInputStream bis = new ByteArrayInputStream(data);
+
+        try {
+            ObjectInputStream ois = new ObjectInputStream(bis);
+            T obj = (T) ois.readObject();
+            return obj;
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+
+        return null;
     }
 }
 ```
 
-##### 5.2)发布文章集成添加延迟队列接口
-
-
-
-在创建WmNewsTaskService
-
 ```java
-package com.heima.wemedia.service;
+package com.linxuan.utils.common;
 
-import com.heima.model.wemedia.pojos.WmNews;
-
-
-public interface WmNewsTaskService {
+public class ProtostuffUtil {
 
     /**
-     * 添加任务到延迟队列中
-     * @param id  文章的id
-     * @param publishTime  发布的时间  可以做为任务的执行时间
+     * 序列化
+     *
+     * @param t
+     * @param <T>
+     * @return
      */
-    public void addNewsToTask(Integer id, Date publishTime);
-
-
-}
-```
-
-实现：
-
-```java
-package com.heima.wemedia.service.impl;
-
-import com.heima.apis.schedule.IScheduleClient;
-import com.heima.model.common.enums.TaskTypeEnum;
-import com.heima.model.schedule.dtos.Task;
-import com.heima.model.wemedia.pojos.WmNews;
-import com.heima.utils.common.ProtostuffUtil;
-import com.heima.wemedia.service.WmNewsTaskService;
-import lombok.SneakyThrows;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-
-
-@Service
-@Slf4j
-public class WmNewsTaskServiceImpl  implements WmNewsTaskService {
-
-
-    @Autowired
-    private IScheduleClient scheduleClient;
-
-    /**
-     * 添加任务到延迟队列中
-     * @param id          文章的id
-     * @param publishTime 发布的时间  可以做为任务的执行时间
-     */
-    @Override
-    @Async
-    public void addNewsToTask(Integer id, Date publishTime) {
-
-        log.info("添加任务到延迟服务中----begin");
-
-        Task task = new Task();
-        task.setExecuteTime(publishTime.getTime());
-        task.setTaskType(TaskTypeEnum.NEWS_SCAN_TIME.getTaskType());
-        task.setPriority(TaskTypeEnum.NEWS_SCAN_TIME.getPriority());
-        WmNews wmNews = new WmNews();
-        wmNews.setId(id);
-        task.setParameters(ProtostuffUtil.serialize(wmNews));
-
-        scheduleClient.addTask(task);
-
-        log.info("添加任务到延迟服务中----end");
-
+    public static <T> byte[] serialize(T t) {
+        Schema schema = RuntimeSchema.getSchema(t.getClass());
+        return ProtostuffIOUtil.toByteArray(t, schema,
+                LinkedBuffer.allocate(LinkedBuffer.DEFAULT_BUFFER_SIZE));
     }
-    
+
+    /**
+     * 反序列化
+     *
+     * @param bytes
+     * @param c
+     * @param <T>
+     * @return
+     */
+    public static <T> T deserialize(byte[] bytes, Class<T> c) {
+        T t = null;
+        try {
+            t = c.newInstance();
+            Schema schema = RuntimeSchema.getSchema(t.getClass());
+            ProtostuffIOUtil.mergeFrom(bytes, t, schema);
+        } catch (InstantiationException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return t;
+    }
+
+    /**
+     * jdk序列化与protostuff序列化对比
+     *
+     * @param args
+     */
+    public static void main(String[] args) {
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < 1000000; i++) {
+            WmNews wmNews = new WmNews();
+            JdkSerializeUtil.serialize(wmNews);
+        }
+        System.out.println(" jdk 花费 " + (System.currentTimeMillis() - start));
+
+        start = System.currentTimeMillis();
+        for (int i = 0; i < 1000000; i++) {
+            WmNews wmNews = new WmNews();
+            ProtostuffUtil.serialize(wmNews);
+        }
+        System.out.println(" protostuff 花费 " + (System.currentTimeMillis() - start));
+    }
 }
 ```
 
+```xml
+<name>leadnews-utils</name>
+<dependencies>
+    <!-- Protostuff序列化工具需要导入该依赖 -->
+    <dependency>
+        <groupId>io.protostuff</groupId>
+        <artifactId>protostuff-core</artifactId>
+        <version>1.6.0</version>
+    </dependency>
+    <dependency>
+        <groupId>io.protostuff</groupId>
+        <artifactId>protostuff-runtime</artifactId>
+        <version>1.6.0</version>
+    </dependency>
+</dependencies>
+```
 
+#### 干掉 Redis 配置（勿忘）
 
-枚举类：
+之前启动项目的时候在 leadnews-wemedia 和 leadnews-article 中都添加了忽略Redis配置类，这里需要将他们干掉。否则项目是启动不来的。
+
+```yml
+# leadanews-wemedia.pom.xml
+server:
+  port: 51803
+spring:
+  application:
+    name: leadnews-wemedia
+  # 忽略Redis配置类，之后再使用
+  # autoconfigure:
+    # exclude: org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.88.129:8848
+      config:
+        server-addr: 192.168.88.129:8848
+        file-extension: yml
+# wemedia端调用OCR识别，所以在wemedia端的bootstrap.yml配置
+tess4j:
+  # TODO:这里采用的是绝对路径，尝试相对路径失败，如果项目路径更换那么这里也需要更换
+  data-path: D:\Java\IdeaProjects\lead_news\linxuan-leadnews\leadnews-common\src\main\resources\tessdata
+  language: chi_sim
+```
+
+```yml
+# leadanews-article.pom.xml
+server:
+  port: 51802
+spring:
+  application:
+    name: leadnews-article
+  # 忽略Redis配置类，之后再使用
+  # autoconfigure:
+    # exclude: org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 192.168.88.129:8848
+      config:
+        server-addr: 192.168.88.129:8848
+        file-extension: yml
+```
+
+然后在相应的 nacos 的 application.yml 中添加 redis 的路径
+
+```yml
+spring:
+  # 调用redis服务,添加以下nacos配置
+  redis:
+    host: 192.168.88.129
+    password: leadnews
+    port: 6379
+```
+
+#### 调用schedule添加任务
+
+创建 TaskTypeEnum 任务类型枚举类
 
 ```java
-package com.heima.model.common.enums;
-
-import lombok.AllArgsConstructor;
-import lombok.Getter;
+package com.linxuan.model.common.enums;
 
 @Getter
 @AllArgsConstructor
 public enum TaskTypeEnum {
 
-    NEWS_SCAN_TIME(1001, 1,"文章定时审核"),
-    REMOTEERROR(1002, 2,"第三方接口调用失败，重试");
-    private final int taskType; //对应具体业务
-    private final int priority; //业务不同级别
-    private final String desc; //描述信息
+    NEWS_SCAN_TIME(1001, 1, "文章定时审核"),
+    REMOTE_ERROR(1002, 2, "第三方接口调用失败，重试");
+    private final int taskType; // 对应具体业务
+    private final int priority; // 业务不同级别
+    private final String desc; // 描述信息
 }
 ```
 
-序列化工具对比
-
-- JdkSerialize：java内置的序列化能将实现了Serilazable接口的对象进行序列化和反序列化， ObjectOutputStream的writeObject()方法可序列化对象生成字节数组
-- Protostuff：google开源的protostuff采用更为紧凑的二进制数组，表现更加优异，然后使用protostuff的编译工具生成pojo类
-
-拷贝资料中的两个类到heima-leadnews-utils下
-
-Protostuff需要引导依赖：
-
-```xml
-<dependency>
-    <groupId>io.protostuff</groupId>
-    <artifactId>protostuff-core</artifactId>
-    <version>1.6.0</version>
-</dependency>
-
-<dependency>
-    <groupId>io.protostuff</groupId>
-    <artifactId>protostuff-runtime</artifactId>
-    <version>1.6.0</version>
-</dependency>
-```
-
-
-
-修改发布文章代码：
-
-把之前的异步调用修改为调用延迟任务
+创建 WmNewsTaskService
 
 ```java
-@Autowired
-private WmNewsTaskService wmNewsTaskService;
- 
-/**
-     * 发布修改文章或保存为草稿
+package com.linxuan.wemedia.service;
+
+public interface WmNewsTaskService {
+
+    /**
+     * 添加审核自媒体文章任务到延迟队列中
+     *
+     * @param id          需要审核的自媒体文章ID
+     * @param publishTime 　文章发布时间　同时也是审核时间
+     */
+    void addNewsToTask(Integer id, Date publishTime);
+}
+```
+
+```java
+package com.linxuan.wemedia.service.impl;
+
+@Slf4j
+@Service
+public class WmNewsTaskServiceImpl implements WmNewsTaskService {
+
+    @Autowired
+    private IScheduleClient iScheduleClient;
+
+    /**
+     * 添加审核自媒体文章任务到延迟队列中
+     *
+     * @param id          需要审核的自媒体文章ID
+     * @param publishTime 　文章发布时间　同时也是审核时间
+     */
+    @Async
+    @Override
+    public void addNewsToTask(Integer id, Date publishTime) {
+
+        // 设置添加的任务对象
+        Task task = new Task();
+        task.setTaskType(TaskTypeEnum.NEWS_SCAN_TIME.getTaskType());
+        task.setPriority(TaskTypeEnum.NEWS_SCAN_TIME.getPriority());
+        if (publishTime == null) {
+            task.setExecuteTime(new Date().getTime());
+        } else {
+            task.setExecuteTime(publishTime.getTime());
+        }
+        // 最后文章审核端从延迟任务队列拉取任务消费 只需要获取文章ID调用autoScanWmNews审核
+        WmNews wmNews = new WmNews();
+        wmNews.setId(id);
+        task.setParameters(ProtostuffUtil.serialize(wmNews));
+
+        // 调用feign远程接口 添加延迟任务
+        iScheduleClient.addTask(task);
+    }
+}
+```
+
+修改发布文章代码，把之前的异步调用修改为调用延迟任务
+
+```java
+package com.linxuan.wemedia.service.impl;
+
+@Slf4j
+@Service
+@Transactional
+public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> implements WmNewsService {
+
+    @Autowired
+    private WmMaterialMapper wmMaterialMapper;
+
+    @Autowired
+    private WmNewsMaterialMapper wmNewsMaterialMapper;
+
+    @Autowired
+    private WmNewsAutoScanService wmNewsAutoScanService;
+
+    @Autowired
+    private WmNewsTaskService wmNewsTaskService;
+
+    /**
+     * 发布文章或者保存草稿
+     *
      * @param dto
      * @return
      */
-@Override
-public ResponseResult submitNews(WmNewsDto dto) {
+    @Override
+    public ResponseResult submitNews(@RequestBody WmNewsDto dto) {
+        // 校验参数合法性
+        if (dto == null || dto.getContent() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
 
-    //0.条件判断
-    if(dto == null || dto.getContent() == null){
-        return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
-    }
+        // 保存或修改文章
+        // 设置参数保存DB
+        WmNews wmNews = new WmNews();
+        // 先将大部分参数由dto拷贝至wmNews对象，只有属性名称和类型相同才会拷贝
+        BeanUtils.copyProperties(dto, wmNews);
+        // 设置封面图片列表引用
+        if (dto.getImages() != null) {
+            String coverImages = StringUtils.join(dto.getImages(), ",");
+            wmNews.setImages(coverImages);
+        }
+        // 数据库里封面图片类型type字段是unsigned无符号类型，没有-1存在，前端传过来-1将其改为null
+        if (dto.getType().equals(WemediaConstants.WM_NEWS_TYPE_AUTO)) {
+            wmNews.setType(null);
+        }
+        // 保存或修改文章
+        saveOrUpdateWmNews(wmNews);
 
-    //1.保存或修改文章
+        // 判断是否为草稿，如果是草稿结束当前方法
+        if (dto.getStatus().equals(WmNews.Status.NORMAL.getCode())) {
+            return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+        }
 
-    WmNews wmNews = new WmNews();
-    //属性拷贝 属性名词和类型相同才能拷贝
-    BeanUtils.copyProperties(dto,wmNews);
-    //封面图片  list---> string
-    if(dto.getImages() != null && dto.getImages().size() > 0){
-        //[1dddfsd.jpg,sdlfjldk.jpg]-->   1dddfsd.jpg,sdlfjldk.jpg
-        String imageStr = StringUtils.join(dto.getImages(), ",");
-        wmNews.setImages(imageStr);
-    }
-    //如果当前封面类型为自动 -1
-    if(dto.getType().equals(WemediaConstants.WM_NEWS_TYPE_AUTO)){
-        wmNews.setType(null);
-    }
+        // 不是草稿，保存图文与文章内容图片素材的关系
+        // 获取到文章内容图片素材列表
+        List<String> imageContentUrls = new ArrayList<>();
+        List<Map> maps = JSON.parseArray(dto.getContent(), Map.class);
+        for (Map map : maps) {
+            if (map.get("type").equals(WemediaConstants.WM_NEWS_TYPE_IMAGE)) {
+                imageContentUrls.add(map.get("value").toString());
+            }
+        }
+        // 保存关系
+        saveRelativeInfoForContent(imageContentUrls, wmNews.getId());
 
-    saveOrUpdateWmNews(wmNews);
+        // 不是草稿，保存文章封面图片与图文的关系，如果当前布局是自动，需要在内容图片引用中匹配封面图片
+        saveRelativeInfoForCover(dto, wmNews, imageContentUrls);
 
-    //2.判断是否为草稿  如果为草稿结束当前方法
-    if(dto.getStatus().equals(WmNews.Status.NORMAL.getCode())){
+        // =====修改该行代码 将直接异步调用审核修改为延迟队列审核=====
+        // 将文章审核任务放到延迟队列中 这样不管是现在审核或者未来审核都可以 该方法为异步方法
+        wmNewsTaskService.addNewsToTask(wmNews.getId(), wmNews.getPublishTime());
+
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
-
-    //3.不是草稿，保存文章内容图片与素材的关系
-    //获取到文章内容中的图片信息
-    List<String> materials =  ectractUrlInfo(dto.getContent());
-    saveRelativeInfoForContent(materials,wmNews.getId());
-
-    //4.不是草稿，保存文章封面图片与素材的关系，如果当前布局是自动，需要匹配封面图片
-    saveRelativeInfoForCover(dto,wmNews,materials);
-
-    //审核文章
-    //        wmNewsAutoScanService.autoScanWmNews(wmNews.getId());
-    wmNewsTaskService.addNewsToTask(wmNews.getId(),wmNews.getPublishTime());
-
-    return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
-
 }
 ```
 
-
-
-##### 5.3)消费任务进行审核文章
-
-WmNewsTaskService中添加方法
-
-```
-/**
- * 消费延迟队列数据
- */
-public void scanNewsByTask();
-```
-
-实现
+#### 消费任务进行审核文章
 
 ```java
-@Autowired
-private WmNewsAutoScanServiceImpl wmNewsAutoScanService;
+package com.linxuan.wemedia;
 
 /**
-     * 消费延迟队列数据
-     */
-@Scheduled(fixedRate = 1000)
-@Override
-@SneakyThrows
-public void scanNewsByTask() {
+ * @EnableFeignClients: 开启Feign远程接口调用，这样可以注入feign接口。指定接口扫描路径
+ * @EnableTransactionManagement: 开启注解式事务驱动
+ * @EnableAsync: 开启异步调用
+ * @EnableScheduling: 开启任务调度注解 使用@Scheduled必须加上该注解
+ */
+@EnableAsync
+@EnableScheduling
+@SpringBootApplication
+@EnableDiscoveryClient
+@EnableTransactionManagement
+@MapperScan("com.linxuan.wemedia.mapper")
+@EnableFeignClients(basePackages = "com.linxuan.feign.api")
+public class WemediaApplication {
 
-    log.info("文章审核---消费任务执行---begin---");
-
-    ResponseResult responseResult = scheduleClient.poll(TaskTypeEnum.NEWS_SCAN_TIME.getTaskType(), TaskTypeEnum.NEWS_SCAN_TIME.getPriority());
-    if(responseResult.getCode().equals(200) && responseResult.getData() != null){
-        String json_str = JSON.toJSONString(responseResult.getData());
-        Task task = JSON.parseObject(json_str, Task.class);
-        byte[] parameters = task.getParameters();
-        WmNews wmNews = ProtostuffUtil.deserialize(parameters, WmNews.class);
-        System.out.println(wmNews.getId()+"-----------");
-        wmNewsAutoScanService.autoScanWmNews(wmNews.getId());
+    public static void main(String[] args) {
+        SpringApplication.run(WemediaApplication.class, args);
     }
-    log.info("文章审核---消费任务执行---end---");
+
+    @Bean
+    public MybatisPlusInterceptor mybatisPlusInterceptor() {
+        MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        return interceptor;
+    }
 }
 ```
 
-在WemediaApplication自媒体的引导类中添加开启任务调度注解`@EnableScheduling`
+```java
+package com.linxuan.wemedia.service;
+
+public interface WmNewsTaskService {
+
+    /**
+     * 定时消费延迟队列数据 每秒钟拉取一次任务
+     */
+    void scanNewsByTask();
+}
+```
+
+```java
+package com.linxuan.wemedia.service.impl;
+
+@Slf4j
+@Service
+public class WmNewsTaskServiceImpl implements WmNewsTaskService {
+
+    @Autowired
+    private IScheduleClient iScheduleClient;
+
+    @Autowired
+    private WmNewsAutoScanService wmNewsAutoScanService;
+
+    /**
+     * 定时消费延迟队列数据 每秒钟拉取一次任务
+     */
+    @Override
+    @Scheduled(fixedRate = 1000)
+    public void scanNewsByTask() {
+        // 调用schedule端消费数据方法
+        ResponseResult responseResult = iScheduleClient
+            .poll(TaskTypeEnum.NEWS_SCAN_TIME.getTaskType(),
+                TaskTypeEnum.NEWS_SCAN_TIME.getPriority());
+
+        // 返回的数据没有问题
+        if (responseResult.getCode().equals(200) && responseResult.getData() != null) {
+            // 对数据解析为Task对象
+            String taskJsonStr = JSON.toJSONString(responseResult.getData());
+            Task task = JSON.parseObject(taskJsonStr, Task.class);
+            // 解析Task对象参数parameters为wmNews
+            byte[] parameters = task.getParameters();
+            WmNews wmNews = ProtostuffUtil.deserialize(parameters, WmNews.class);
+            // 调用自动审核方法
+            wmNewsAutoScanService.autoScanWmNews(wmNews.getId());
+        }
+    }
+}
+```
 
 ## 6)作业

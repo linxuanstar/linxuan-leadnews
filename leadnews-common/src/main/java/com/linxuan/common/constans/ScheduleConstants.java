@@ -14,4 +14,7 @@ public class ScheduleConstants {
     public static String FUTURE = "future_";
     // 当前数据key前缀，存储在list中
     public static String TOPIC = "topic_";
+
+    // 任务锁
+    public static String FUTURE_TASK_SYNC = "FUTURE_TASK_SYNC";
 }

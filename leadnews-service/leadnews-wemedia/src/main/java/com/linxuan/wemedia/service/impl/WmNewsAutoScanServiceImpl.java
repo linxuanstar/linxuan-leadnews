@@ -92,6 +92,8 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
 
         // 从自媒体文章中提取纯文本内容、内容图片以及封面图片
         if (wmNews.getStatus().equals(WmNews.Status.SUBMIT.getCode())) {
+            log.info("开始审核文章");
+
             Map<String, Object> textAndImages = handleTextAndImages(wmNews);
 
             // 首先通过自己维护的敏感词管理系统来审核文本
@@ -117,6 +119,8 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
             // 回填文章id
             wmNews.setArticleId((Long) responseResult.getData());
             updateWmNews(wmNews, (short) 9, "审核成功");
+
+            log.info("审核文章完毕");
         }
     }
 

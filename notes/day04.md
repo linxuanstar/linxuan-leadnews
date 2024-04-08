@@ -1071,7 +1071,7 @@ public class WmNewsAutoScanServiceTest {
 }
 ```
 
-### 服务降级处理
+### 服务降级处理（时间调大）
 
 ```mermaid
 graph LR;
@@ -1142,8 +1142,9 @@ feign:
   client:
     config:
       default:
-        connectTimeout: 2000
-        readTimeout: 2000
+        # 时间适当增大，否则后面会一直报错
+        connectTimeout: 5000
+        readTimeout: 5000
 ```
 
 ```java
