@@ -1795,5 +1795,3 @@ public class WmNewsTaskServiceImpl implements WmNewsTaskService {
     }
 }
 ```
-
-## 6)作业
