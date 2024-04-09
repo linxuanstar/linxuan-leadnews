@@ -116,7 +116,7 @@ public class WmNews implements Serializable {
     private String images;
 
     /**
-     * 是否上架
+     * 是否上架 1是上架 0是下架
      */
     @TableField("enable")
     private Short enable;

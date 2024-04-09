@@ -2,10 +2,12 @@ package com.linxuan.wemedia.service.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.linxuan.common.constans.WemediaConstants;
+import com.linxuan.common.constans.WmNewsMessageConstants;
 import com.linxuan.common.exception.CustomException;
 import com.linxuan.model.common.dtos.PageResponseResult;
 import com.linxuan.model.common.dtos.ResponseResult;
@@ -27,15 +29,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.RequestBody;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -54,6 +54,9 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
 
     @Autowired
     private WmNewsTaskService wmNewsTaskService;
+
+    @Autowired
+    private KafkaTemplate kafkaTemplate;
 
 
     /**
@@ -110,7 +113,7 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
      * @return
      */
     @Override
-    public ResponseResult submitNews(@RequestBody WmNewsDto dto) {
+    public ResponseResult submitNews(WmNewsDto dto) {
         // 校验参数合法性
         if (dto == null || dto.getContent() == null) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
@@ -155,6 +158,50 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
 
         // 将文章审核任务放到延迟队列中 这样不管是现在审核或者未来审核都可以
         wmNewsTaskService.addNewsToTask(wmNews.getId(), wmNews.getPublishTime());
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+    /**
+     * 文章上下架请求
+     *
+     * @param dto 主要传递文章ID及上下架值　enable 0是下架 1是上架
+     * @return 返回上下架结果
+     */
+    @Override
+    public ResponseResult downOrUp(WmNewsDto dto) {
+        // 校验参数
+        if (dto == null
+                || dto.getId() == null
+                || dto.getEnable() == null
+                || dto.getEnable() <= -1
+                || dto.getEnable() >= 2) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "参数有问题");
+        }
+
+        // 查询文章
+        WmNews wmNews = getById(dto.getId());
+        if (wmNews == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST, "文章不存在");
+        }
+
+        // 判断文章是否发布
+        if (!wmNews.getStatus().equals(WmNews.Status.PUBLISHED.getCode())) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID, "当前文章不是发布状态 不能够上下架");
+        }
+
+        // 修改文章enable字段
+        update(new LambdaUpdateWrapper<WmNews>()
+                .eq(WmNews::getId, wmNews.getId())
+                .set(WmNews::getEnable, dto.getEnable()));
+
+        // 传递Kafka消息
+        if (wmNews.getArticleId() != null) {
+            Map<String, Object> map = new HashMap<>();
+            map.put(WmNewsMessageConstants.ARTICLE_ID, wmNews.getArticleId());
+            map.put(WmNewsMessageConstants.ENABLE, dto.getEnable());
+            kafkaTemplate.send(WmNewsMessageConstants.WM_NEWS_UP_OR_DOWN_TOPIC, JSON.toJSONString(map));
+        }
 
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }

@@ -50,9 +50,13 @@ public class WmNewsDto {
      */
     private Short status;
 
-
     /**
      * 封面图片列表 多张图以逗号隔开
      */
     private List<String> images;
+
+    /**
+     * 文章上下架  0下架  1上架
+     */
+    private Short enable;
 }

@@ -48,7 +48,7 @@ public class ApArticleConfig implements Serializable {
     /**
      * 是否下架
      * true: 下架   1
-     * false: 没有下架  0
+     * false: 上架  0
      */
     @TableField("is_down")
     private Boolean isDown;

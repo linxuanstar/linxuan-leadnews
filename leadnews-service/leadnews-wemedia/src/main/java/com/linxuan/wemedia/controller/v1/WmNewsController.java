@@ -35,6 +35,7 @@ public class WmNewsController {
 
     /**
      * 文章发布及修改
+     *
      * @param dto
      * @return
      */
@@ -42,5 +43,16 @@ public class WmNewsController {
     public ResponseResult submitNews(@RequestBody WmNewsDto dto) {
 
         return wmNewsService.submitNews(dto);
+    }
+
+    /**
+     * 文章上下架请求
+     *
+     * @param dto 主要传递文章ID及上下架值　enable 0是下架 1是上架
+     * @return 返回上下架结果
+     */
+    @PostMapping("/down_or_up")
+    public ResponseResult downOrUp(@RequestBody WmNewsDto dto) {
+        return wmNewsService.downOrUp(dto);
     }
 }
