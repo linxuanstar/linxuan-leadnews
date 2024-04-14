@@ -1499,7 +1499,7 @@ public class ProtostuffUtil {
 
 #### 干掉 Redis 配置（勿忘）
 
-之前启动项目的时候在 leadnews-wemedia 和 leadnews-article 中都添加了忽略Redis配置类，这里需要将他们干掉。否则项目是启动不来的。
+之前启动项目的时候在 leadnews-wemedia、 leadnews-article 和 leadnews-user 中都添加了忽略Redis配置类，这里需要将他们干掉。否则项目是启动不来的。
 
 ```yml
 # leadanews-wemedia.pom.xml
