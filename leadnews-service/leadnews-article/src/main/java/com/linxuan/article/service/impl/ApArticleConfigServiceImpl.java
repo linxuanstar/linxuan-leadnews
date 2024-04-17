@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.linxuan.article.mapper.ApArticleConfigMapper;
 import com.linxuan.article.service.ApArticleConfigService;
-import com.linxuan.common.constans.WmNewsMessageConstants;
+import com.linxuan.common.constants.WmNewsMessageConstants;
 import com.linxuan.model.article.pojos.ApArticleConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

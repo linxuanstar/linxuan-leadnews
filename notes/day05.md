@@ -497,7 +497,7 @@ public class Task implements Serializable {
 leadnews-common 模块下面创建常量类 ScheduleConstants
 
 ```java
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class ScheduleConstants {
 
@@ -1114,7 +1114,7 @@ public class CacheService extends CachingConfigurerSupport {
 ```
 
 ```java
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class ScheduleConstants {
 

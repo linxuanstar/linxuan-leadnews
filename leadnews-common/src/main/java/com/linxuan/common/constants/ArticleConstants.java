@@ -1,4 +1,4 @@
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class ArticleConstants {
     // 默认分页条数

@@ -4,7 +4,10 @@ import com.alibaba.fastjson.JSON;
 import com.linxuan.model.article.dtos.UserSearchDto;
 import com.linxuan.model.common.dtos.ResponseResult;
 import com.linxuan.model.common.enums.AppHttpCodeEnum;
+import com.linxuan.model.user.pojos.ApUser;
+import com.linxuan.search.service.ApUserSearchService;
 import com.linxuan.search.service.ArticleSearchService;
+import com.linxuan.utils.thread.AppThreadLocalUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.elasticsearch.action.search.SearchRequest;
@@ -32,6 +35,9 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
     @Autowired
     private RestHighLevelClient restHighLevelClient;
 
+    @Autowired
+    private ApUserSearchService apUserSearchService;
+
     /**
      * ES 根据条件分页查询文章列表
      *
@@ -42,12 +48,20 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
     @Override
     public ResponseResult search(UserSearchDto dto) throws IOException {
 
-        // 1.检查参数
+        // 检查参数
         if (dto == null || StringUtils.isBlank(dto.getSearchWords())) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
 
-        // 2.设置查询条件
+        ApUser user = AppThreadLocalUtil.getUser();
+
+        // 异步调用 保存搜索记录
+        if (user != null && dto.getFromIndex() == 0) {
+            apUserSearchService.insert(dto.getSearchWords(), user.getId());
+        }
+
+
+        // 设置查询条件
         SearchRequest searchRequest = new SearchRequest("app_info_article");
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 

@@ -51,6 +51,15 @@ public class AuthorizeFilter implements GlobalFilter {
                 response.setStatusCode(HttpStatus.UNAUTHORIZED);
                 return response.setComplete();
             }
+
+            // 获取用户ID
+            Object userId = claimsBody.get("id");
+            // 将用户ID存入请求头
+            ServerHttpRequest serverHttpRequest = request.mutate().headers(httpHeaders -> {
+                httpHeaders.add("userId", userId + "");
+            }).build();
+            // 重置请求
+            exchange.mutate().request(serverHttpRequest).build();
         } catch (Exception e) {
             // 返回状态码校验失败
             response.setStatusCode(HttpStatus.UNAUTHORIZED);

@@ -2484,7 +2484,7 @@ public interface WmNewsMaterialMapper extends BaseMapper<WmNewsMaterial> {
 ```
 
 ```java
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class WemediaConstants {
     // 收藏

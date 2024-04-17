@@ -206,7 +206,7 @@ spring:
 ```
 
 ```java
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class WmNewsMessageConstants {
     // 传递的参数
@@ -216,7 +216,7 @@ public class WmNewsMessageConstants {
     public static final String ENABLE = "enable";
 
     // 文章上下架功能传递kafka消息的主题
-    public static final String WM_NEWS_UP_OR_DOWN_TOPIC="wm.news.up.or.down.topic";
+    public static final String WM_NEWS_UP_OR_DOWN_TOPIC = "wm.news.up.or.down.topic";
 }
 ```
 

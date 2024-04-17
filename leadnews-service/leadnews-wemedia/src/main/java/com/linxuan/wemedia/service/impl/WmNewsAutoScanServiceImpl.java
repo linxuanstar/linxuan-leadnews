@@ -2,7 +2,7 @@ package com.linxuan.wemedia.service.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.linxuan.common.constans.WemediaConstants;
+import com.linxuan.common.constants.WemediaConstants;
 import com.linxuan.common.tess4j.Tess4jClient;
 import com.linxuan.feign.api.article.IArticleClient;
 import com.linxuan.file.service.FileStorageService;
@@ -29,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;

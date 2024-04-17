@@ -7,7 +7,7 @@ import com.linxuan.article.mapper.ApArticleContentMapper;
 import com.linxuan.article.mapper.ApArticleMapper;
 import com.linxuan.article.service.ApArticleService;
 import com.linxuan.article.service.ArticleFreemarkerService;
-import com.linxuan.common.constans.ArticleConstants;
+import com.linxuan.common.constants.ArticleConstants;
 import com.linxuan.model.article.dtos.ArticleDto;
 import com.linxuan.model.article.dtos.ArticleHomeDto;
 import com.linxuan.model.article.pojos.ApArticle;

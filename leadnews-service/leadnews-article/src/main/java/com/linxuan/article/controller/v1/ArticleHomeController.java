@@ -1,9 +1,8 @@
 package com.linxuan.article.controller.v1;
 
 import com.linxuan.article.service.ApArticleService;
-import com.linxuan.common.constans.ArticleConstants;
+import com.linxuan.common.constants.ArticleConstants;
 import com.linxuan.model.article.dtos.ArticleHomeDto;
-import com.linxuan.model.article.pojos.ApArticleContent;
 import com.linxuan.model.common.dtos.ResponseResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

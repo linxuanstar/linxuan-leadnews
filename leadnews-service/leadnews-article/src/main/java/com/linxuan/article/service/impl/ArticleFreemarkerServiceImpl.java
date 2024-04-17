@@ -1,11 +1,10 @@
 package com.linxuan.article.service.impl;
 
 import com.alibaba.fastjson.JSON;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.linxuan.article.service.ApArticleService;
 import com.linxuan.article.service.ArticleFreemarkerService;
-import com.linxuan.common.constans.ArticleConstants;
+import com.linxuan.common.constants.ArticleConstants;
 import com.linxuan.file.service.FileStorageService;
 import com.linxuan.model.article.pojos.ApArticle;
 import com.linxuan.model.search.vos.SearchArticleVo;
@@ -21,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.util.HashMap;

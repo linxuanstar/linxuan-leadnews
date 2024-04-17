@@ -412,7 +412,7 @@ resources中新建mapper/ApArticleMapper.xml，配置如下：
 **定义常量类**
 
 ```java
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class ArticleConstants {
     // 默认分页条数

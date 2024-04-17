@@ -2,7 +2,7 @@ package com.linxuan.schedule.service.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.linxuan.common.constans.ScheduleConstants;
+import com.linxuan.common.constants.ScheduleConstants;
 import com.linxuan.common.redis.CacheService;
 import com.linxuan.model.schedule.dtos.Task;
 import com.linxuan.model.schedule.pojos.Taskinfo;
@@ -14,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

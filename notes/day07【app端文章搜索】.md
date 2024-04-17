@@ -710,7 +710,7 @@ public class ArticleSearchController {
 
 启动项目进行测试，启动文章微服务 leadnews-article，用户微服务 leadnews-user，搜索微服务 leadnews-search，app 网关微服务 leadnews-app-gateway，app 前端工程。在 APP 前端工程搜索文章，便成功显示。
 
-### 文章自动审核构建索引（TODO）
+### 文章自动审核构建索引
 
 文章在审核成功之后，不仅需要添加到 MySQL 中，同时也应该添加到 ES 中。那么这里可以使用 Kafka 来传递消息，当文章审核成功后文章微服务端发送消息至 MQ，搜索微服务端接收消息，添加数据到索引库中。
 
@@ -831,7 +831,7 @@ public class ArticleFreemarkerServiceImpl implements ArticleFreemarkerService {
 ```
 
 ```java
-package com.linxuan.common.constans;
+package com.linxuan.common.constants;
 
 public class ArticleConstants {
     // 默认分页条数
@@ -878,7 +878,7 @@ spring:
 2.定义监听接收消息,保存索引数据
 
 ```java
-package com.heima.search.listener;
+package com.linxuan.search.listener;
 
 @Component
 @Slf4j
@@ -909,58 +909,266 @@ public class SyncArticleListener {
 }
 ```
 
-启动项目进行测试，启动文章微服务 leadnews-article，用户微服务 leadnews-user，搜索微服务 leadnews-search，app 网关微服务 leadnews-app-gateway，app 前端工程。
+想要测试需要启动所有微服务
 
 ## APP端搜索记录功能
 
-### 4.1) 需求分析
+用户搜索展示搜索记录10条，按照搜索关键词的时间倒序。可以删除搜索记录。保存历史记录，保存10条，多余的则删除最久的历史记录。
 
-![1587366878895](D:\Java\IdeaProjects\lead_news\!information\day07\讲义\D:\Java\IdeaProjects\lead_news\!information\day07\讲义\app端文章搜索.assets\1587366878895.png)
+用户的搜索记录，需要给每一个用户都保存一份，数据量较大，要求加载速度快，通常这样的数据存储到 mongodb更合适，不建议直接存储到关系型数据库中。
 
-- 展示用户的搜索记录10条，按照搜索关键词的时间倒序
-- 可以删除搜索记录
-- 保存历史记录，保存10条，多余的则删除最久的历史记录
-
-### 4.2)数据存储说明
-
-用户的搜索记录，需要给每一个用户都保存一份，数据量较大，要求加载速度快，通常这样的数据存储到mongodb更合适，不建议直接存储到关系型数据库中
-
-![image-20210709153428259](D:\Java\IdeaProjects\lead_news\!information\day07\讲义\app端文章搜索.assets\image-20210709153428259.png)
-
-### 4.3)MongoDB安装及集成
-
-#### 4.3.1)安装MongoDB
-
+```sh
+[root@localhost ~]# docker pull mongo
+Using default tag: latest
+latest: Pulling from library/mongo
+Digest: sha256:5be752bc5f2ac4182252d0f15d74df080923aba39700905cb26d9f70f39e9702
+Status: Downloaded newer image for mongo:latest
+docker.io/library/mongo:latest
+[root@localhost ~]# docker run -di --name mongo-service --restart=always -p 27017:27017 -v ~/data/mongodata:/data mongo
+113f5025382131cb0cc0fa53eca374d72b29c2f4024c9c77bbb9b01ef3e81ff7
 ```
 
+```sh
+# 进入docker的mongo容器 注意只是进入容器等于进到了一个小系统 这个系统专门存储mongodb
+[root@localhost ~]# docker exec -it mongo-service /bin/bash
+root@113f50253821:/# 
+# 通过mongod命令查看mongodb版本
+root@113f50253821:/# mongod --version
+db version v5.0.5
+Build Info: {
+    "version": "5.0.5",
+    "gitVersion": "d65fd89df3fc039b5c55933c0f71d647a54510ae",
+    "openSSLVersion": "OpenSSL 1.1.1f  31 Mar 2020",
+    "modules": [],
+    "allocator": "tcmalloc",
+    "environment": {
+        "distmod": "ubuntu2004",
+        "distarch": "x86_64",
+        "target_arch": "x86_64"
+    }
+}
+# 进入mongo Shell端
+root@113f50253821:/# mongo;
+MongoDB shell version v5.0.5
+connecting to: mongodb://127.0.0.1:27017/?compressors=disabled&gssapiServiceName=mongodb
+Implicit session: session { "id" : UUID("cc369371-b989-4baf-85ac-477772eb1b92") }
+MongoDB server version: 5.0.5
+================
+# 查看所有数据库
+> show dbs;
+admin   0.000GB
+config  0.000GB
+local   0.000GB
+test    0.000GB
+# 查看所有表
+> show tables;
+ap_user_search
 ```
 
-拉取镜像
+```sh
+# 使用本地的mongodb shell连接docker中mongodb
+E:\MongoDB\bin>mongosh.exe 192.168.88.129
+Current Mongosh Log ID: 661d512a36366bcf36eb3843
+Connecting to:          mongodb://192.168.88.129:27017/?directConnection=true&appName=mongosh+1.8.2
+Using MongoDB:          5.0.5
+Using Mongosh:          1.8.2
 
+For mongosh info see: https://docs.mongodb.com/mongodb-shell/
+
+test> show tables;
+ap_user_search
+test>
 ```
-docker pull mongo
+
+### 创建测试项目
+
+```sql
+# MongoDB中导入SQL文件
+use leadnews-history;
+// ----------------------------
+// Collection structure for ap_associate_words
+// ----------------------------
+db.getCollection("ap_associate_words").drop();
+db.createCollection("ap_associate_words");
+
+// ----------------------------
+// Documents of ap_associate_words
+// ----------------------------
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bd0043aab4f3022ce4a119"),
+    associateWords: "黑马程序员",
+    createdTime: ISODate("2021-06-06T17:05:07Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bd0060dcf502511cf7dd9d"),
+    associateWords: "黑马头条",
+    createdTime: ISODate("2021-06-06T17:05:36Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bd00746f1adf5bf6812e89"),
+    associateWords: "黑马健康",
+    createdTime: ISODate("2021-06-06T17:05:56Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bd008bacd61257dd1def70"),
+    associateWords: "黑马java",
+    createdTime: ISODate("2021-06-06T17:06:19Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbef32966c83665b0c412"),
+    associateWords: "黑马",
+    createdTime: ISODate("2021-06-07T06:38:43Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf00ba1ff738964402f5"),
+    associateWords: "黑马王子",
+    createdTime: ISODate("2021-06-07T06:38:56Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf0bf77cee6b3ab24088"),
+    associateWords: "创业黑马",
+    createdTime: ISODate("2021-06-07T06:39:07Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf16422e154b1460f209"),
+    associateWords: "黑马股",
+    createdTime: ISODate("2021-06-07T06:39:18Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf2c342fda48b9bd2d76"),
+    associateWords: "黑马乐园",
+    createdTime: ISODate("2021-06-07T06:39:39Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf3942b3ac4db5aa99a7"),
+    associateWords: "黑马会",
+    createdTime: ISODate("2021-06-07T06:39:53Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf4577a037353abc336d"),
+    associateWords: "黑马自行车",
+    createdTime: ISODate("2021-06-07T06:40:05Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf529a20a4616c2112c2"),
+    associateWords: "黑马股票",
+    createdTime: ISODate("2021-06-07T06:40:18Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf60e8d80a6e0513426a"),
+    associateWords: "黑马影视",
+    createdTime: ISODate("2021-06-07T06:40:32Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf6e0eee9919bdb422dd"),
+    associateWords: "黑马论坛",
+    createdTime: ISODate("2021-06-07T06:40:46Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf7be26ebc00ccbad249"),
+    associateWords: "黑马训练营",
+    createdTime: ISODate("2021-06-07T06:40:59Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf898b13451f8447f6d2"),
+    associateWords: "黑马it",
+    createdTime: ISODate("2021-06-07T06:41:13Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbf96795ea97bc80e7d82"),
+    associateWords: "黑马培训",
+    createdTime: ISODate("2021-06-07T06:41:25Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbfa6715f926844b70b38"),
+    associateWords: "黑马视频",
+    createdTime: ISODate("2021-06-07T06:41:41Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbfb5abf4de2c8466be79"),
+    associateWords: "黑马java",
+    createdTime: ISODate("2021-06-07T06:41:57Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbfc1f2c2745b46b7f4a1"),
+    associateWords: "黑马教程",
+    createdTime: ISODate("2021-06-07T06:42:09Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbfce31c9be6646b020e9"),
+    associateWords: "黑马传智",
+    createdTime: ISODate("2021-06-07T06:42:22Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbfdb4ed4521b765f308d"),
+    associateWords: "传智黑马",
+    createdTime: ISODate("2021-06-07T06:42:35Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbfec550b7e7e2cd620a1"),
+    associateWords: "北京黑马",
+    createdTime: ISODate("2021-06-07T06:42:52Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdbffbc8cf631c9db0e571"),
+    associateWords: "黑马教育",
+    createdTime: ISODate("2021-06-07T06:43:07Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdc0074c59200e9c87486a"),
+    associateWords: "黑马学院",
+    createdTime: ISODate("2021-06-07T06:43:19Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
+db.getCollection("ap_associate_words").insert([ {
+    _id: ObjectId("60bdc02a4582bc47e1137a39"),
+    associateWords: "黑马直播",
+    createdTime: ISODate("2021-06-07T06:43:54Z"),
+    _class: "com.linxuan.mongo.pojo.ApAssociateWords"
+} ]);
 ```
-
-创建容器
-
-```
-docker run -di --name mongo-service --restart=always -p 27017:27017 -v ~/data/mongodata:/data mongo
-```
-
-#### 4.3.2)导入资料中的mongo-demo项目到heima-leadnews-test中
-
-其中有三项配置比较关键：
-
-第一：mongo依赖
 
 ```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-mongodb</artifactId>
-</dependency>
+<artifactId>mongodb-demo</artifactId>  
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-test</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-mongodb</artifactId>
+    </dependency>
+</dependencies>
 ```
-
-第二：mongo配置
 
 ```yaml
 server:
@@ -973,23 +1181,25 @@ spring:
       database: leadnews-history
 ```
 
-第三：映射
+```java
+package com.linxuan.mongo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class MongoDBApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MongoDBApplication.class, args);
+    }
+}
+```
 
 ```java
-package com.itheima.mongo.pojo;
-
-import lombok.Data;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.io.Serializable;
-import java.util.Date;
+package com.linxuan.mongo.pojo;
 
 /**
- * <p>
  * 联想词表
- * </p>
- *
- * @author itheima
  */
 @Data
 @Document("ap_associate_words")
@@ -1008,106 +1218,135 @@ public class ApAssociateWords implements Serializable {
      * 创建时间
      */
     private Date createdTime;
-
 }
 ```
 
-#### 4.3.3)核心方法
-
 ```java
-package com.itheima.mongo.test;
+package com.linxuan.mongo;
 
-
-import com.itheima.mongo.MongoApplication;
-import com.itheima.mongo.pojo.ApAssociateWords;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.test.context.junit4.SpringRunner;
-
-import java.util.Date;
-import java.util.List;
-
-@SpringBootTest(classes = MongoApplication.class)
 @RunWith(SpringRunner.class)
+@SpringBootTest(classes = MongoDBApplication.class)
 public class MongoTest {
-
 
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    //保存
+    // 查询一个
     @Test
-    public void saveTest(){
-        /*for (int i = 0; i < 10; i++) {
-            ApAssociateWords apAssociateWords = new ApAssociateWords();
-            apAssociateWords.setAssociateWords("黑马头条");
-            apAssociateWords.setCreatedTime(new Date());
-            mongoTemplate.save(apAssociateWords);
-        }*/
-        ApAssociateWords apAssociateWords = new ApAssociateWords();
-        apAssociateWords.setAssociateWords("黑马直播");
-        apAssociateWords.setCreatedTime(new Date());
-        mongoTemplate.save(apAssociateWords);
-
-    }
-
-    //查询一个
-    @Test
-    public void saveFindOne(){
-        ApAssociateWords apAssociateWords = mongoTemplate.findById("60bd973eb0c1d430a71a7928", ApAssociateWords.class);
+    public void saveFindOne() {
+        ApAssociateWords apAssociateWords = mongoTemplate
+                .findById("60bdc02a4582bc47e1137a39", ApAssociateWords.class);
         System.out.println(apAssociateWords);
     }
 
-    //条件查询
+    // 保存
     @Test
-    public void testQuery(){
+    public void saveTest() {
+        ApAssociateWords apAssociateWords = new ApAssociateWords();
+        apAssociateWords.setAssociateWords("林炫直播");
+        apAssociateWords.setCreatedTime(new Date());
+        mongoTemplate.save(apAssociateWords);
+    }
+
+    // 条件查询
+    @Test
+    public void testQuery() {
         Query query = Query.query(Criteria.where("associateWords").is("黑马头条"))
-                .with(Sort.by(Sort.Direction.DESC,"createdTime"));
-        List<ApAssociateWords> apAssociateWordsList = mongoTemplate.find(query, ApAssociateWords.class);
+                .with(Sort.by(Sort.Direction.DESC, "createdTime"));
+        List<ApAssociateWords> apAssociateWordsList = mongoTemplate.find(query, 
+                                                                         ApAssociateWords.class);
         System.out.println(apAssociateWordsList);
     }
 
     @Test
-    public void testDel(){
-        mongoTemplate.remove(Query.query(Criteria.where("associateWords").is("黑马头条")),ApAssociateWords.class);
+    public void testDel() {
+        mongoTemplate.remove(Query.query(Criteria.where("associateWords")
+                .is("黑马头条")), ApAssociateWords.class);
     }
 }
 ```
 
-### 4.4)保存搜索记录
+### 保存搜索记录
 
-#### 4.4.1)实现思路
+当用户在文章微服务端输入关键字之后我们记录关键字，然后存储 MongoDB 中最后显示出来。这其中要使用异步请求。
 
-![image-20210709153935904](D:\Java\IdeaProjects\lead_news\!information\day07\讲义\app端文章搜索.assets\image-20210709153935904.png)
+```sql
+# MongoDB中导入SQL文件
+use leadnews-history;
 
-用户输入关键字进行搜索的异步记录关键字
+// ----------------------------
+// Collection structure for ap_user_search
+// ----------------------------
+db.getCollection("ap_user_search").drop();
+db.createCollection("ap_user_search");
 
-![image-20210709154053892](D:\Java\IdeaProjects\lead_news\!information\day07\讲义\app端文章搜索.assets\image-20210709154053892.png)
+// ----------------------------
+// Documents of ap_user_search
+// ----------------------------
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfad346ed51407504f131"),
+    userId: NumberInt("4"),
+    keyword: "黑马程序员",
+    createdTime: ISODate("2021-06-07T07:13:17Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfad846ed51407504f132"),
+    userId: NumberInt("4"),
+    keyword: "黑马头条",
+    createdTime: ISODate("2021-06-06T17:25:01Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfaf646ed51407504f135"),
+    userId: NumberInt("4"),
+    keyword: "日本",
+    createdTime: ISODate("2021-06-06T17:21:52Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfafb46ed51407504f136"),
+    userId: NumberInt("4"),
+    keyword: "疫苗",
+    createdTime: ISODate("2021-06-06T16:42:35Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfb0646ed51407504f137"),
+    userId: NumberInt("4"),
+    keyword: "搜索",
+    createdTime: ISODate("2021-06-06T16:42:46Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfb0f46ed51407504f138"),
+    userId: NumberInt("4"),
+    keyword: "李世民",
+    createdTime: ISODate("2021-06-06T16:42:55Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+db.getCollection("ap_user_search").insert([ {
+    _id: ObjectId("60bcfe9c6b9b4f52b228b8ef"),
+    userId: NumberInt("4"),
+    keyword: "黑马",
+    createdTime: ISODate("2021-06-06T16:58:04Z"),
+    _class: "com.linxuan.search.pojos.ApUserSearch"
+} ]);
+```
 
+#### 实现思路
 
+用户输入关键字进行搜索之后，通过异步记录关键字。首先判断关键字是否存在，如果存在那么更新到最新时间。如果关键字不存在，判断总数据量是否超过10，不超过直接保存关键字，否则替换最后一条数据。
 
 用户搜索记录对应的集合，对应实体类：
 
 ```java
-package com.heima.search.pojos;
-
-import lombok.Data;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.io.Serializable;
-import java.util.Date;
+package com.linxuan.search.pojos;
 
 /**
- * <p>
- * APP用户搜索信息表
- * </p>
- * @author itheima
+ * 用户搜索信息表
+ * 需要给每一个用户都保存一份，数据量较大，要求加载速度快，通常这样的数据存储到 mongodb
+ * 因为在搜索模块导入了mongodb依赖，而实体类模块没有导入，所以直接在这里放实体类了
  */
 @Data
 @Document("ap_user_search")
@@ -1134,28 +1373,20 @@ public class ApUserSearch implements Serializable {
      * 创建时间
      */
     private Date createdTime;
-
 }
 ```
 
-
-
-#### 4.4.2)实现步骤
-
-1.搜索微服务集成mongodb
-
-①：pom依赖
-
 ```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-mongodb</artifactId>
-</dependency>
+<artifactId>leadnews-search</artifactId>
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-mongodb</artifactId>
+    </dependency>
+</dependencies>
 ```
 
-②：nacos配置
-
-```yaml
+```yml
 spring:
   data:
    mongodb:
@@ -1164,109 +1395,261 @@ spring:
     database: leadnews-history
 ```
 
-③：在当天资料中找到对应的实体类拷贝到搜索微服务下
-
-2.创建ApUserSearchService新增insert方法
+#### 实现步骤
 
 ```java
-public interface ApUserSearchService {
+package com.linxuan.search.service;
 
+public interface ApUserSearchService {
     /**
      * 保存用户搜索历史记录
-     * @param keyword
-     * @param userId
+     *
+     * @param keyword 用户搜索的关键字
+     * @param userId  用户ID
      */
-    public void insert(String keyword,Integer userId);
+    void insert(String keyword, Integer userId);
 }
 ```
 
-实现类：
-
 ```java
-@Service
+package com.linxuan.search.service.impl;
+
 @Slf4j
+@Service
 public class ApUserSearchServiceImpl implements ApUserSearchService {
 
     @Autowired
     private MongoTemplate mongoTemplate;
+
     /**
-     * 保存用户搜索历史记录
-     * @param keyword
-     * @param userId
+     * 保存用户搜索历史记录 异步调用
+     *
+     * @param keyword 用户搜索的关键字
+     * @param userId  用户ID
      */
-    @Override
     @Async
+    @Override
     public void insert(String keyword, Integer userId) {
-        //1.查询当前用户的搜索关键词
+        // 查询当前用户的搜索关键词是否存在
         Query query = Query.query(Criteria.where("userId").is(userId).and("keyword").is(keyword));
         ApUserSearch apUserSearch = mongoTemplate.findOne(query, ApUserSearch.class);
 
-        //2.存在 更新创建时间
-        if(apUserSearch != null){
+        // 如果存在 更新创建时间
+        if (apUserSearch != null) {
             apUserSearch.setCreatedTime(new Date());
             mongoTemplate.save(apUserSearch);
             return;
         }
 
-        //3.不存在，判断当前历史记录总数量是否超过10
+        // 当前搜索的关键字不存在
         apUserSearch = new ApUserSearch();
         apUserSearch.setUserId(userId);
         apUserSearch.setKeyword(keyword);
         apUserSearch.setCreatedTime(new Date());
 
+
         Query query1 = Query.query(Criteria.where("userId").is(userId));
-        query1.with(Sort.by(Sort.Direction.DESC,"createdTime"));
+        query1.with(Sort.by(Sort.Direction.DESC, "createdTime"));
         List<ApUserSearch> apUserSearchList = mongoTemplate.find(query1, ApUserSearch.class);
 
-        if(apUserSearchList == null || apUserSearchList.size() < 10){
+        // 判断当前历史记录总数量是否超过10，如果小于10直接相加，大于10替换最后一个
+        if (apUserSearchList == null || apUserSearchList.size() < 10) {
             mongoTemplate.save(apUserSearch);
-        }else {
+        } else {
             ApUserSearch lastUserSearch = apUserSearchList.get(apUserSearchList.size() - 1);
-            mongoTemplate.findAndReplace(Query.query(Criteria.where("id").is(lastUserSearch.getId())),apUserSearch);
+            mongoTemplate.findAndReplace(Query.query(Criteria.where("id")
+                                                     .is(lastUserSearch.getId())), apUserSearch);
         }
     }
 }
 ```
 
-3.参考自媒体相关微服务，在搜索微服务中获取当前登录的用户
+参考自媒体相关微服务，在搜索微服务中获取当前登录的用户。
 
-4.在ArticleSearchService的search方法中调用保存历史记录
+1. 首先需要在APP端的网关，获取到用户的ID存入至请求头并重置请求。
 
-完整代码如下：
+   ```java
+   package com.linxuan.app.gateway.filter;
+   
+   /**
+    * 全局过滤器实现jwt校验
+    * 设置该过滤器优先级为-1，值越小越先执行
+    */
+   @Slf4j
+   @Order(-1)
+   @Component
+   public class AuthorizeFilter implements GlobalFilter {
+   
+       @Override
+       public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+           // 获取参数
+           ServerHttpRequest request = exchange.getRequest();
+           ServerHttpResponse response = exchange.getResponse();
+   
+           // 登录操作放行，路由到相应微服务
+           if (request.getURI().getPath().contains("/login")) {
+               return chain.filter(exchange);
+           }
+   
+           // 判断是否有token
+           String token = request.getHeaders().getFirst("token");
+           if (StringUtils.isEmpty(token)) {
+               // 返回状态码校验失败
+               response.setStatusCode(HttpStatus.UNAUTHORIZED);
+               return response.setComplete();
+           }
+   
+           // 判断token是否有效
+           try {
+               Claims claimsBody = AppJwtUtil.getClaimsBody(token);
+               int result = AppJwtUtil.verifyToken(claimsBody);
+               if (result == 1 || result == 2) {
+                   // 返回状态码校验失败
+                   response.setStatusCode(HttpStatus.UNAUTHORIZED);
+                   return response.setComplete();
+               }
+   
+               // ================添加下列代码==============
+               // 获取用户ID
+               Object userId = claimsBody.get("id");
+               // 将用户ID存入请求头
+               ServerHttpRequest serverHttpRequest = request.mutate().headers(httpHeaders -> {
+                   httpHeaders.add("userId", userId + "");
+               }).build();
+               // 重置请求
+               exchange.mutate().request(serverHttpRequest).build();
+           } catch (Exception e) {
+               // 返回状态码校验失败
+               response.setStatusCode(HttpStatus.UNAUTHORIZED);
+               return response.setComplete();
+           }
+   
+           return chain.filter(exchange);
+       }
+   }
+   ```
+
+2. 工具类模块创建APP端获取用户ID的工具类
+
+   ```java
+   package com.linxuan.utils.thread;
+   
+   public class AppThreadLocalUtil {
+       private static final ThreadLocal<ApUser> AP_USER_THREAD_LOCAL = new ThreadLocal<>();
+   
+       /**
+        * 添加用户
+        *
+        * @param user
+        */
+       public static void setUser(ApUser user) {
+           AP_USER_THREAD_LOCAL.set(user);
+       }
+   
+       /**
+        * 获取用户
+        *
+        * @return
+        */
+       public static ApUser getUser() {
+           return AP_USER_THREAD_LOCAL.get();
+       }
+   
+       /**
+        * 清理
+        */
+       public static void clear() {
+           AP_USER_THREAD_LOCAL.remove();
+       }
+   }
+   ```
+
+3. APP端的搜索微服务实现拦截器，拦截所有请求获取用户ID并存入当前线程。
+
+   ```java
+   package com.linxuan.search.interceptor;
+   
+   @Component
+   public class AppTokenInterceptor implements HandlerInterceptor {
+   
+       /**
+        * 获取请求头中的userId信息并存入当前线程
+        *
+        * @param request
+        * @param response
+        * @param handler
+        * @return
+        */
+       @Override
+       public boolean preHandle(HttpServletRequest request, HttpServletResponse response, 
+                                Object handler) {
+           String userId = request.getHeader("userId");
+           if (userId != null) {
+               ApUser apUser = new ApUser();
+               apUser.setId(Integer.parseInt(userId));
+               AppThreadLocalUtil.setUser(apUser);
+           }
+           return true;
+       }
+   
+       /**
+        * 清理线程中数据,如果是postHandle可能会导致抛出异常导致无法清理
+        *
+        * @param request
+        * @param response
+        * @param handler
+        * @param modelAndView
+        * @throws Exception
+        */
+       @Override
+       public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+           // AppThreadLocalUtil.clear();
+       }
+   
+       /**
+        * 清理线程中数据
+        *
+        * @param request
+        * @param response
+        * @param handler
+        * @param ex
+        * @throws Exception
+        */
+       @Override
+       public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+           AppThreadLocalUtil.clear();
+       }
+   }
+   ```
+
+4. 让当前拦截器生效。
+
+   ```java
+   package com.linxuan.search.config;
+   
+   /**
+    * 配置使拦截器生效，拦截所有的请求
+    */
+   @Configuration
+   public class WebConfig implements WebMvcConfigurer {
+   
+       @Autowired
+       private AppTokenInterceptor requestUrlInterceptor;
+   
+       @Override
+       public void addInterceptors(InterceptorRegistry registry) {
+           registry.addInterceptor(requestUrlInterceptor).addPathPatterns("/**");
+       }
+   }
+   ```
+
+在 ArticleSearchService 的 search 方法中调用保存历史记录
 
 ```java
-package com.heima.search.service.impl;
+package com.linxuan.search.service.impl;
 
-import com.alibaba.fastjson.JSON;
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.model.user.pojos.ApUser;
-import com.heima.search.service.ApUserSearchService;
-import com.heima.search.service.ArticleSearchService;
-import com.heima.utils.thread.AppThreadLocalUtil;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.elasticsearch.action.search.SearchRequest;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.RequestOptions;
-import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.common.text.Text;
-import org.elasticsearch.index.query.*;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
-import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
-import org.elasticsearch.search.sort.SortOrder;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
-@Service
 @Slf4j
+@Service
 public class ArticleSearchServiceImpl implements ArticleSearchService {
 
     @Autowired
@@ -1276,63 +1659,67 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
     private ApUserSearchService apUserSearchService;
 
     /**
-     * es文章分页检索
+     * ES 根据条件分页查询文章列表
      *
-     * @param dto
-     * @return
+     * @param dto 条件
+     * @return 返回分页查询结果
+     * @throws IOException ES查询可能抛出IO异常
      */
     @Override
     public ResponseResult search(UserSearchDto dto) throws IOException {
 
-        //1.检查参数
-        if(dto == null || StringUtils.isBlank(dto.getSearchWords())){
+        // 检查参数
+        if (dto == null || StringUtils.isBlank(dto.getSearchWords())) {
             return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
         }
 
+        // =================添加下列代码================
         ApUser user = AppThreadLocalUtil.getUser();
-
-        //异步调用 保存搜索记录
-        if(user != null && dto.getFromIndex() == 0){
+        // 异步调用 保存搜索记录
+        if (user != null && dto.getFromIndex() == 0) {
             apUserSearchService.insert(dto.getSearchWords(), user.getId());
         }
 
 
-        //2.设置查询条件
+        // 设置查询条件
         SearchRequest searchRequest = new SearchRequest("app_info_article");
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 
-        //布尔查询
+        // 布尔查询
         BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
 
-        //关键字的分词之后查询
-        QueryStringQueryBuilder queryStringQueryBuilder = QueryBuilders.queryStringQuery(dto.getSearchWords()).field("title").field("content").defaultOperator(Operator.OR);
+        // 关键字的分词之后查询
+        QueryStringQueryBuilder queryStringQueryBuilder = QueryBuilders
+                .queryStringQuery(dto.getSearchWords())
+                .field("title").field("content")
+                .defaultOperator(Operator.OR);
         boolQueryBuilder.must(queryStringQueryBuilder);
 
-        //查询小于mindate的数据
-        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("publishTime").lt(dto.getMinBehotTime().getTime());
+        // 查询小于mindate的数据
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery("publishTime")
+                .lt(dto.getMinBehotTime().getTime());
         boolQueryBuilder.filter(rangeQueryBuilder);
 
-        //分页查询
+        // 分页查询
         searchSourceBuilder.from(0);
         searchSourceBuilder.size(dto.getPageSize());
 
-        //按照发布时间倒序查询
+        // 按照发布时间倒序查询
         searchSourceBuilder.sort("publishTime", SortOrder.DESC);
 
-        //设置高亮  title
+        // 设置高亮  title
         HighlightBuilder highlightBuilder = new HighlightBuilder();
         highlightBuilder.field("title");
         highlightBuilder.preTags("<font style='color: red; font-size: inherit;'>");
         highlightBuilder.postTags("</font>");
         searchSourceBuilder.highlighter(highlightBuilder);
 
-
         searchSourceBuilder.query(boolQueryBuilder);
         searchRequest.source(searchSourceBuilder);
         SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 
 
-        //3.结果封装返回
+        // 3.结果封装返回
 
         List<Map> list = new ArrayList<>();
 
@@ -1340,32 +1727,42 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
         for (SearchHit hit : hits) {
             String json = hit.getSourceAsString();
             Map map = JSON.parseObject(json, Map.class);
-            //处理高亮
-            if(hit.getHighlightFields() != null && hit.getHighlightFields().size() > 0){
+            // 处理高亮
+            if (hit.getHighlightFields() != null && hit.getHighlightFields().size() > 0) {
                 Text[] titles = hit.getHighlightFields().get("title").getFragments();
                 String title = StringUtils.join(titles);
-                //高亮标题
-                map.put("h_title",title);
-            }else {
-                //原始标题
-                map.put("h_title",map.get("title"));
+                // 高亮标题
+                map.put("h_title", title);
+            } else {
+                // 原始标题
+                map.put("h_title", map.get("title"));
             }
             list.add(map);
         }
 
         return ResponseResult.okResult(list);
-
     }
 }
 ```
 
-5.保存历史记录中开启异步调用，添加注解@Async
+```java
+package com.linxuan.search;
 
-6.在搜索微服务引导类上开启异步调用
+/**
+ * @EnableDiscoveryClient: 配置注册中心
+ */
+@EnableAsync
+@SpringBootApplication
+@EnableDiscoveryClient
+public class SearchApplication {
 
-![image-20210709154841113](D:\Java\IdeaProjects\lead_news\!information\day07\讲义\app端文章搜索.assets\image-20210709154841113.png)
+    public static void main(String[] args) {
+        SpringApplication.run(SearchApplication.class, args);
+    }
+}
+```
 
-7.测试，搜索后查看结果
+以此打开前端项目：leadnews-app-gateway APP端网关、leadnews-article APP端文章微服务、leadnews-user APP端登录用户微服务、leadnews-search APP端搜索微服务，以及通过 nginx 打开前端项目，测试搜索是否保存搜索记录。
 
 
 
@@ -1390,7 +1787,7 @@ public class ArticleSearchServiceImpl implements ArticleSearchService {
  * APP用户搜索信息表 前端控制器
  * </p>
  *
- * @author itheima
+ * @author itlinxuan
  */
 @Slf4j
 @RestController
@@ -1452,7 +1849,7 @@ public ResponseResult findUserSearch() {
  * <p>
  * APP用户搜索信息表 前端控制器
  * </p>
- * @author itheima
+ * @author itlinxuan
  */
 @Slf4j
 @RestController
@@ -1577,7 +1974,7 @@ public ResponseResult delUserSearch(@RequestBody HistorySearchDto historySearchD
 对应实体类
 
 ```java
-package com.heima.search.pojos;
+package com.linxuan.search.pojos;
 
 import lombok.Data;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -1590,7 +1987,7 @@ import java.util.Date;
  * 联想词表
  * </p>
  *
- * @author itheima
+ * @author itlinxuan
  */
 @Data
 @Document("ap_associate_words")
@@ -1643,10 +2040,10 @@ public class ApAssociateWords implements Serializable {
 新建接口
 
 ```java
-package com.heima.search.controller.v1;
+package com.linxuan.search.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.UserSearchDto;
+import com.linxuan.model.common.dtos.ResponseResult;
+import com.linxuan.model.search.dtos.UserSearchDto;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -1670,17 +2067,17 @@ public class ApAssociateWordsController {
 新建联想词业务层接口
 
 ```java
-package com.heima.search.service;
+package com.linxuan.search.service;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.UserSearchDto;
+import com.linxuan.model.common.dtos.ResponseResult;
+import com.linxuan.model.search.dtos.UserSearchDto;
 
 /**
  * <p>
  * 联想词表 服务类
  * </p>
  *
- * @author itheima
+ * @author itlinxuan
  */
 public interface ApAssociateWordsService {
 
@@ -1697,13 +2094,13 @@ public interface ApAssociateWordsService {
 实现类
 
 ```java
-package com.heima.search.service.impl;
+package com.linxuan.search.service.impl;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.common.enums.AppHttpCodeEnum;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.search.pojos.ApAssociateWords;
-import com.heima.search.service.ApAssociateWordsService;
+import com.linxuan.model.common.dtos.ResponseResult;
+import com.linxuan.model.common.enums.AppHttpCodeEnum;
+import com.linxuan.model.search.dtos.UserSearchDto;
+import com.linxuan.search.pojos.ApAssociateWords;
+import com.linxuan.search.service.ApAssociateWordsService;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -1754,11 +2151,11 @@ public class ApAssociateWordsServiceImpl implements ApAssociateWordsService {
 新建联想词控制器
 
 ```java
-package com.heima.search.controller.v1;
+package com.linxuan.search.controller.v1;
 
-import com.heima.model.common.dtos.ResponseResult;
-import com.heima.model.search.dtos.UserSearchDto;
-import com.heima.search.service.ApAssociateWordsService;
+import com.linxuan.model.common.dtos.ResponseResult;
+import com.linxuan.model.search.dtos.UserSearchDto;
+import com.linxuan.search.service.ApAssociateWordsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -1770,7 +2167,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>
  * 联想词表 前端控制器
  * </p>
- * @author itheima
+ * @author itlinxuan
  */
 @Slf4j
 @RestController

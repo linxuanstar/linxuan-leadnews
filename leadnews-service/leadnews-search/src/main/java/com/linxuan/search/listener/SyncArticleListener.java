@@ -1,7 +1,7 @@
 package com.linxuan.search.listener;
 
 import com.alibaba.fastjson.JSON;
-import com.linxuan.common.constans.ArticleConstants;
+import com.linxuan.common.constants.ArticleConstants;
 import com.linxuan.model.search.vos.SearchArticleVo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;

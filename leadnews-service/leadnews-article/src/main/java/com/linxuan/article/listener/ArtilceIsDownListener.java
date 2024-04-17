@@ -2,7 +2,7 @@ package com.linxuan.article.listener;
 
 import com.alibaba.fastjson.JSON;
 import com.linxuan.article.service.ApArticleConfigService;
-import com.linxuan.common.constans.WmNewsMessageConstants;
+import com.linxuan.common.constants.WmNewsMessageConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
