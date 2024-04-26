@@ -22,4 +22,9 @@ public class WemediaConstants {
     // 素材图片引用类型 0内容引用、1封面引用
     public static final Short WM_CONTENT_REFERENCE = 0;
     public static final Short WM_COVER_REFERENCE = 1;
+
+    // 人工审核成功
+    public static final Short WM_NEWS_AUTH_PASS = 4;
+    // 人工审核失败
+    public static final Short WM_NEWS_AUTH_FAIL = 2;
 }

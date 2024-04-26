@@ -26,9 +26,9 @@ public class MinIOTest {
     @Test
     public void testMinIO() {
         Map<String, String> map = new HashMap<>();
-        map.put("D:\\plugins\\css\\index.css", "plugins/css/index.css");
-        map.put("D:\\plugins\\js\\index.js", "plugins/js/index.js");
-        map.put("D:\\plugins\\js\\axios.min.js", "plugins/js/axios.min.js");
+        map.put("D:\\tmp\\plugins\\css\\index.css", "plugins/css/index.css");
+        map.put("D:\\tmp\\plugins\\js\\index.js", "plugins/js/index.js");
+        map.put("D:\\tmp\\plugins\\js\\axios.min.js", "plugins/js/axios.min.js");
 
         map.forEach((key, value) -> {
             int lastIndexOf = value.lastIndexOf(".");

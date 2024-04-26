@@ -1787,7 +1787,7 @@ public class SearchApplication {
  * APP用户搜索信息表 前端控制器
  * </p>
  *
- * @author itlinxuan
+ * @author linxuan
  */
 @Slf4j
 @RestController
@@ -1849,7 +1849,7 @@ public ResponseResult findUserSearch() {
  * <p>
  * APP用户搜索信息表 前端控制器
  * </p>
- * @author itlinxuan
+ * @author linxuan
  */
 @Slf4j
 @RestController
@@ -1987,7 +1987,7 @@ import java.util.Date;
  * 联想词表
  * </p>
  *
- * @author itlinxuan
+ * @author linxuan
  */
 @Data
 @Document("ap_associate_words")
@@ -2077,7 +2077,7 @@ import com.linxuan.model.search.dtos.UserSearchDto;
  * 联想词表 服务类
  * </p>
  *
- * @author itlinxuan
+ * @author linxuan
  */
 public interface ApAssociateWordsService {
 
@@ -2167,7 +2167,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>
  * 联想词表 前端控制器
  * </p>
- * @author itlinxuan
+ * @author linxuan
  */
 @Slf4j
 @RestController

@@ -2,4 +2,5 @@ org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
   com.linxuan.common.exception.ExceptionCatch,\
   com.linxuan.common.swagger.SwaggerConfiguration,\
   com.linxuan.common.tess4j.Tess4jClient,\
-  com.linxuan.common.redis.CacheService
+  com.linxuan.common.redis.CacheService,\
+  com.linxuan.common.jackson.InitJacksonConfig

@@ -24,6 +24,11 @@ public interface IArticleClient {
     @PostMapping("/api/v1/article/save")
     public ResponseResult saveArticle(@RequestBody ArticleDto dto);
 
+    /**
+     * 查询文章配置 文章是否可以评论
+     * @param articleId
+     * @return
+     */
     @GetMapping("/api/v1/article/findArticleConfigByArticleId/{articleId}")
     ResponseResult findArticleConfigByArticleId(@PathVariable("articleId") Long articleId);
 }

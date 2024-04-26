@@ -262,6 +262,7 @@ public class WmNewsAutoScanServiceImpl implements WmNewsAutoScanService {
      * @param wmNews 需要存储的自媒体端文章信息，需要转化为app端 ap_article表信息
      * @return
      */
+    @Override
     public ResponseResult saveAppArticle(WmNews wmNews) {
         // 最后存储的数据，接下来对数据进行封装
         ArticleDto articleDto = new ArticleDto();

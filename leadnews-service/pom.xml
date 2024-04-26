@@ -14,7 +14,9 @@
         <module>leadnews-wemedia</module>
         <module>leadnews-schedule</module>
         <module>leadnews-search</module>
+        <module>leadnews-behavior</module>
         <module>leadnews-comment</module>
+        <module>leadnews-admin</module>
     </modules>
     <modelVersion>4.0.0</modelVersion>
 

@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 
@@ -16,9 +17,18 @@ import java.io.Serializable;
  *
  */
 @Data
-@Builder
+@NoArgsConstructor
 @TableName("ap_article_config")
 public class ApArticleConfig implements Serializable {
+
+
+    public ApArticleConfig(Long articleId){
+        this.articleId = articleId;
+        this.isComment = true;
+        this.isForward = true;
+        this.isDelete = false;
+        this.isDown = false;
+    }
 
     @TableId(value = "id",type = IdType.ID_WORKER)
     private Long id;

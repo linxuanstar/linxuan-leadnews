@@ -3,6 +3,7 @@ package com.linxuan.article.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.linxuan.model.article.dtos.ArticleDto;
 import com.linxuan.model.article.dtos.ArticleHomeDto;
+import com.linxuan.model.article.dtos.ArticleInfoDto;
 import com.linxuan.model.article.pojos.ApArticle;
 import com.linxuan.model.common.dtos.ResponseResult;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,4 +25,11 @@ public interface ApArticleService extends IService<ApArticle> {
      * @return
      */
     public ResponseResult saveArticle(ArticleDto dto);
+
+    /**
+     * 加载文章详情 数据回显
+     * @param dto
+     * @return
+     */
+    public ResponseResult loadArticleBehavior(ArticleInfoDto dto);
 }

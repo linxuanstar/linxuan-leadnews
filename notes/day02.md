@@ -803,7 +803,7 @@ minio:
 <!-- 引入 Axios 的 JS 文件 -->
 <#--<script src="https://unpkg.com/axios/dist/axios.min.js"></script>-->
 <script src="../../../plugins/js/axios.min.js"></script>
-<!-- 页面逻辑 -->
+<!-- 页面逻辑,上传该文件的时候修改index.js文件，该文件URL路径修改为自己的 -->
 <script src="../../../plugins/js/index.js"></script>
 </body>
 
@@ -812,7 +812,9 @@ minio:
 
 ### 上传 css/js 文件
 
-模板文件得到内容会生成 html 文件并展示，因此需要 css、JS 文件装饰，在 minio 上传所需文件 `plugins\css\index.css`、`plugins\js\axios.min.js`、`plugins\js\index.js`
+模板文件得到内容会生成 html 文件并展示，因此需要 css、JS 文件装饰，在 minio 上传所需文件 `plugins\css\index.css`、`plugins\js\axios.min.js`、`plugins\js\index.js`。
+
+> plugins\js\index.js文件的url路径修改一下。
 
 ```xml
 <dependencies>

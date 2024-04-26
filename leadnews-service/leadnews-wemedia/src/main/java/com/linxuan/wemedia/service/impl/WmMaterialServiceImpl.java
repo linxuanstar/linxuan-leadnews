@@ -23,6 +23,8 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.UUID;
 
+import static com.linxuan.model.common.enums.AppHttpCodeEnum.PARAM_REQUIRE;
+
 @Slf4j
 @Service
 @Transactional
@@ -99,5 +101,61 @@ public class WmMaterialServiceImpl extends ServiceImpl<WmMaterialMapper, WmMater
         pageResponseResult.setData(page.getRecords());
         return pageResponseResult;
 
+    }
+
+    /**
+     * 删除图片文件 这里并没有将minio中文件干掉
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public ResponseResult delPicture(Integer id) {
+        if (id == null)
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_REQUIRE);
+        WmMaterial wmMaterial = getById(id);
+        if (wmMaterial == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
+        }
+        boolean b = removeById(id);
+        if (b) {
+            return ResponseResult.okResult(wmMaterial);
+        } else {
+            return ResponseResult.errorResult(501, "文件删除失败");
+        }
+    }
+
+    /**
+     * 收藏图片文件
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public ResponseResult collect(Integer id) {
+        if (id == null)
+            return ResponseResult.errorResult(0, "传输的收藏id为空");
+        WmMaterial wmMaterial = getById(id);
+        wmMaterial.setIsCollection((short) 1);
+        updateById(wmMaterial);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+    /**
+     * 取消收藏图片素材
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public ResponseResult cancelCollect(Integer id) {
+        if (id == null)
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_REQUIRE);
+        WmMaterial wmMaterial = getById(id);
+        wmMaterial.setIsCollection((short) 0);
+        updateById(wmMaterial);
+
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
 }

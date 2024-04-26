@@ -1,11 +1,15 @@
 package com.linxuan.article.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.linxuan.article.mapper.ApArticleConfigMapper;
 import com.linxuan.article.service.ApArticleConfigService;
 import com.linxuan.common.constants.WmNewsMessageConstants;
 import com.linxuan.model.article.pojos.ApArticleConfig;
+import com.linxuan.model.comment.dtos.CommentConfigDto;
+import com.linxuan.model.common.dtos.ResponseResult;
+import com.linxuan.model.common.enums.AppHttpCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,5 +42,19 @@ public class ApArticleConfigServiceImpl extends ServiceImpl<ApArticleConfigMappe
                     .eq(ApArticleConfig::getId, map.get(WmNewsMessageConstants.ARTICLE_ID))
                     .set(ApArticleConfig::getIsDown, isDown));
         }
+    }
+
+    /**
+     * 修改文章评论状态
+     *
+     * @param dto
+     * @return
+     */
+    @Override
+    public ResponseResult updateCommentStatus(CommentConfigDto dto) {
+        update(Wrappers.<ApArticleConfig>lambdaUpdate()
+                .eq(ApArticleConfig::getArticleId, dto.getArticleId())
+                .set(ApArticleConfig::getIsComment, dto.getOperation()));
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
 }

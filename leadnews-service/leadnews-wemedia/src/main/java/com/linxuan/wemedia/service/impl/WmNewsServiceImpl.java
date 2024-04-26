@@ -12,16 +12,19 @@ import com.linxuan.common.exception.CustomException;
 import com.linxuan.model.common.dtos.PageResponseResult;
 import com.linxuan.model.common.dtos.ResponseResult;
 import com.linxuan.model.common.enums.AppHttpCodeEnum;
+import com.linxuan.model.wemedia.dtos.NewsAuthDto;
 import com.linxuan.model.wemedia.dtos.WmNewsDto;
 import com.linxuan.model.wemedia.dtos.WmNewsPageReqDto;
 import com.linxuan.model.wemedia.pojos.WmMaterial;
 import com.linxuan.model.wemedia.pojos.WmNews;
 import com.linxuan.model.wemedia.pojos.WmNewsMaterial;
 import com.linxuan.model.wemedia.pojos.WmUser;
+import com.linxuan.model.wemedia.vo.WmNewsVo;
 import com.linxuan.utils.thread.WmThreadLocalUtil;
 import com.linxuan.wemedia.mapper.WmMaterialMapper;
 import com.linxuan.wemedia.mapper.WmNewsMapper;
 import com.linxuan.wemedia.mapper.WmNewsMaterialMapper;
+import com.linxuan.wemedia.mapper.WmUserMapper;
 import com.linxuan.wemedia.service.WmNewsAutoScanService;
 import com.linxuan.wemedia.service.WmNewsService;
 import com.linxuan.wemedia.service.WmNewsTaskService;
@@ -56,6 +59,12 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
     @Autowired
     private KafkaTemplate kafkaTemplate;
 
+    @Autowired
+    private WmUserMapper wmUserMapper;
+
+    @Autowired
+    private WmNewsMapper wmNewsMapper;
+
 
     /**
      * 根据条件查询自媒体端文章列表
@@ -88,7 +97,7 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
             lambdaQueryWrapper.eq(WmNews::getChannelId, dto.getChannelId());
         }
         if (dto.getKeyword() != null) {
-            lambdaQueryWrapper.eq(WmNews::getTitle, dto.getKeyword());
+            lambdaQueryWrapper.like(WmNews::getTitle, dto.getKeyword());
         }
         // 查询当前用户发布的文章
         lambdaQueryWrapper.eq(WmNews::getUserId, user.getId());
@@ -204,6 +213,144 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
         return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
     }
 
+    /**
+     * 查看文章详情
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public ResponseResult getOneNews(Integer id) {
+        if (id == null)
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
+        WmNews wmNews = getById(id);
+
+        return ResponseResult.okResult(200, "操作成功", wmNews);
+    }
+
+    /**
+     * 删除文章
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public ResponseResult deleteNews(Integer id) {
+        if (id == null)
+            return ResponseResult.errorResult(501, "文章Id不可缺少");
+        WmNews wmNews = getById(id);
+
+        if (wmNews == null) {
+            return ResponseResult.errorResult(1002, "文章不存在");
+        }
+        if (wmNews.getStatus() == 9) {
+            return ResponseResult.errorResult(501, "文章已发布，不能删除");
+        }
+        removeById(id);
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
+
+
+    /**
+     * 管理端——查询文章列表
+     *
+     * @param dto
+     * @return
+     */
+    @Override
+    public ResponseResult findList(NewsAuthDto dto) {
+        // 1.参数检查
+        dto.checkParam();
+
+        // 记录当前页
+        int currentPage = dto.getPage();
+
+        // 2.分页查询+count查询
+        dto.setPage((dto.getPage() - 1) * dto.getSize());
+        List<WmNewsVo> wmNewsVoList = wmNewsMapper.findListAndPage(dto);
+        int count = wmNewsMapper.findListCount(dto);
+
+        // 3.结果返回
+        ResponseResult responseResult = new PageResponseResult(currentPage, dto.getSize(), count);
+        responseResult.setData(wmNewsVoList);
+        return responseResult;
+    }
+
+
+    /**
+     * 查询文章详情
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public ResponseResult findWmNewsVo(Integer id) {
+        // 1.检查参数
+        if (id == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        // 2.查询文章信息
+        WmNews wmNews = getById(id);
+        if (wmNews == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
+        }
+
+        // 3.查询用户信息
+        WmUser wmUser = wmUserMapper.selectById(wmNews.getUserId());
+
+        // 4.封装vo返回
+        WmNewsVo vo = new WmNewsVo();
+        // 属性拷贝
+        BeanUtils.copyProperties(wmNews, vo);
+        if (wmUser != null) {
+            vo.setAuthorName(wmUser.getName());
+        }
+
+        ResponseResult responseResult = new ResponseResult().ok(vo);
+
+        return responseResult;
+    }
+
+    /**
+     * 文章审核，修改状态
+     *
+     * @param status 2  审核失败  4 审核成功
+     * @param dto
+     * @return
+     */
+    @Override
+    public ResponseResult updateStatus(Short status, NewsAuthDto dto) {
+        // 1.检查参数
+        if (dto == null || dto.getId() == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.PARAM_INVALID);
+        }
+        // 2.查询文章信息
+        WmNews wmNews = getById(dto.getId());
+        if (wmNews == null) {
+            return ResponseResult.errorResult(AppHttpCodeEnum.DATA_NOT_EXIST);
+        }
+
+        // 3.修改文章的状态
+        wmNews.setStatus(status);
+        if (org.apache.commons.lang3.StringUtils.isNotBlank(dto.getMsg())) {
+            wmNews.setReason(dto.getMsg());
+        }
+        updateById(wmNews);
+
+        // 审核成功，则需要创建app端文章数据，并修改自媒体文章
+        if (status.equals(WemediaConstants.WM_NEWS_AUTH_PASS)) {
+            // 创建app端文章数据
+            ResponseResult responseResult = wmNewsAutoScanService.saveAppArticle(wmNews);
+            if (responseResult.getCode().equals(200)) {
+                wmNews.setArticleId((Long) responseResult.getData());
+                wmNews.setStatus(WmNews.Status.PUBLISHED.getCode());
+                updateById(wmNews);
+            }
+        }
+
+        // 4.返回
+        return ResponseResult.okResult(AppHttpCodeEnum.SUCCESS);
+    }
 
     /**
      * 保存或修改文章
@@ -302,4 +449,6 @@ public class WmNewsServiceImpl extends ServiceImpl<WmNewsMapper, WmNews> impleme
             wmNewsMaterialMapper.saveRelations(idMaterials, newsId, type);
         }
     }
+
+
 }
